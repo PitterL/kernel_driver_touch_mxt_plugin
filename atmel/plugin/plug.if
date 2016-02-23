@@ -1098,9 +1098,6 @@ static void mxt_plugin_hook_t6(struct plug_interface *pl, u8 status)
 		}
 	}
 
-	if (pl->tck->hook_t6)
-		pl->tck->hook_t6(pl->tck, status);
-
 	if (pl->cal->hook_t6)
 		pl->cal->hook_t6(pl->cal, status);
 
@@ -1227,9 +1224,6 @@ static int mxt_plugin_hook_t100(struct plug_interface *pl, int id, int x, int y,
 
 	if (test_flag(PL_STATUS_FLAG_STOP,&obs->flag))
 		return ret;
-
-	if (pl->tck->hook_t100)
-		ret = pl->tck->hook_t100(pl->tck, id, x, y, in);
 
 	if (pl->cal->hook_t100)
 		pl->cal->hook_t100(pl->cal, id, x, y, in);
@@ -1654,15 +1648,12 @@ static int init_plugin(struct plug_interface *pl)
 {
 	struct plug_observer *obs = &pl->observer;
 
-	pl->tck = &pl->devices.tick;
 	pl->cal = &pl->devices.calibration;
 	pl->ac = &pl->devices.ac_noise;
 	pl->pi = &pl->devices.proci;
 	pl->msc = &pl->devices.misc;
 	pl->clp = &pl->devices.clip;
 	pl->wd = &pl->devices.watchdog;
-
-	plugin_interface_tick_init(pl->tck);
 
 #if defined(CONFIG_MXT_PLIGIN_CAL)
 	plugin_interface_cal_init(pl->cal);
@@ -1775,20 +1766,6 @@ static int mxt_plugin_init(struct mxt_data *data)
 		deinit_plugin(pl);
 		return error;
 	} 
-
-	if (pl->tck->init) {
-		pl->tck->dev = (void *)pl;
-		pl->tck->dcfg = &pl->init_cfg;
-		pl->tck->set_and_clr_flag = plug_set_and_clr_flag;
-		if (pl->tck->init(pl->tck) != 0) {
-			dev_err(dev, "init tck plugin failed, disable this plugin\n");
-			pl->tck->deinit(pl->tck);
-			memset(pl->tck, 0, sizeof(struct plugin_tick));
-		}
-	} else {
-		dev_info(dev, "doesn't get any tck plugin\n");
-		memset(pl->tck, 0, sizeof(struct plugin_tick));
-	}
 
 	if (pl->cal->init) {
 		pl->cal->dev = (void *)pl;

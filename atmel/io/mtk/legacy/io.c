@@ -60,29 +60,36 @@ int device_wait_irq_state(struct device *dev, int pin_level, long interval)
 {
 	struct mxt_platform_data *pdata = dev_get_platdata(dev);
 	int state;
-	long timeout_retries = 0;
 	unsigned long start_wait_jiffies = jiffies;
+	unsigned long timeout;
 
 	if (!pdata)
 		return -ENODEV;
 
 	/* Reset completion indicated by asserting CHG  */
 	/* Wait for CHG asserted or timeout after 200ms */
+	timeout = start_wait_jiffies + msecs_to_jiffies(interval);
 	do {
 		state = mt_get_gpio_in(pdata->gpio_irq);
 		if (state == pin_level)
 			break;
+
 		//usleep_range(1000, 1000); 
 		msleep(1);
-	} while (++timeout_retries < interval);
+
+		if (time_after_eq(jiffies, timeout)) {
+			state = mt_get_gpio_in(pdata->gpio_irq);
+			break;
+		}
+	} while (1);
 
 	if (state == pin_level) {
-		dev_info(dev, "irq took (%ld) %ums\n",
-			timeout_retries,jiffies_to_msecs(jiffies - start_wait_jiffies));
+		dev_dbg(dev, "irq took (%ld) %ums\n",
+			interval, jiffies_to_msecs(jiffies - start_wait_jiffies));
 		return 0;
 	}else {
-		dev_warn(dev, "timeout waiting for idle %ums\n",
-			jiffies_to_msecs(jiffies - start_wait_jiffies));
+		dev_warn(dev, "timeout waiting(%ld) for idle %ums\n",
+			interval, jiffies_to_msecs(jiffies - start_wait_jiffies));
 		return -ETIME;
 	}
 }
@@ -221,6 +228,7 @@ int device_por_reset(struct device *dev)
 	msleep(100);
 	device_regulator_enable(dev);
 
+	device_wait_irq_state(dev, 0, 100);
 	return 0;
 }
 
@@ -228,20 +236,28 @@ void device_disable_irq(struct device *dev, const char * name_str)
 {
 	struct mxt_platform_data *pdata = dev_get_platdata(dev);
 
+	dev_info(dev, "irq disabled ++, depth %d, %s\n", atomic_read(&pdata->depth), name_str);
+
 	mt_eint_mask(CUST_EINT_TOUCH_PANEL_NUM);
 	atomic_dec(&pdata->depth);
 
-	dev_info(dev, "irq disabled, depth %d, %s\n", atomic_read(&pdata->depth), name_str);
+	WARN_ON(atomic_read(&pdata->depth) < -1);
+
+	dev_dbg(dev, "irq disabled --, depth %d, %s\n", atomic_read(&pdata->depth), name_str);
 }
 
 void device_disable_irq_nosync(struct device *dev, const char * name_str)
 {
 	struct mxt_platform_data *pdata = dev_get_platdata(dev);
 
+	dev_dbg(dev, "irq disabled nosync ++, depth %d, %s\n", atomic_read(&pdata->depth), name_str);
+
 	mt_eint_mask(CUST_EINT_TOUCH_PANEL_NUM);
 	atomic_dec(&pdata->depth);
 
-	dev_info(dev, "irq disabled nosync, depth %d, %s\n", atomic_read(&pdata->depth), name_str);
+	WARN_ON(atomic_read(&pdata->depth) < -1);
+
+	dev_dbg(dev, "irq disabled nosync --, depth %d, %s\n", atomic_read(&pdata->depth), name_str);
 }
 
 void device_disable_irq_wake(struct device *dev)
@@ -253,11 +269,14 @@ void device_enable_irq(struct device *dev, const char * name_str)
 {
 	struct mxt_platform_data *pdata = dev_get_platdata(dev);
 
+	dev_dbg(dev, "irq enabled ++, depth %d, %s\n", atomic_read(&pdata->depth), name_str);
+
 	atomic_inc(&pdata->depth);
 	mt_eint_unmask(CUST_EINT_TOUCH_PANEL_NUM);
 
-	dev_info(dev, "irq enabled, depth %d, %s\n", atomic_read(&pdata->depth), name_str);
 	WARN_ON(atomic_read(&pdata->depth) > 0);
+
+	dev_dbg(dev, "irq enabled --, depth %d, %s\n", atomic_read(&pdata->depth), name_str);
 }
 
 void device_enable_irq_wake(struct device *dev)
@@ -272,6 +291,7 @@ void device_free_irq(struct device *dev, void *dev_id, const char * name_str)
 	if (pdata && pdata->irq) {
 		dev_info(dev, "irq free, %d %s\n", pdata->irq, name_str);
 		mt_eint_unregistration(CUST_EINT_TOUCH_PANEL_NUM);
+		atomic_set(&pdata->depth, 0);
 	}
 }
 

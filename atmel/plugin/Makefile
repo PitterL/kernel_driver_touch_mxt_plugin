@@ -1,6 +1,5 @@
 ccflags-y += -I$(srctree)/drivers/input/touchscreen/atmel/
 
-obj-$(CONFIG_MXT_PLUGIN_SUPPORT) += plugin_tick.o
 obj-$(CONFIG_MXT_PLIGIN_CAL) += plugin_cal.o
 obj-$(CONFIG_MXT_PLIGIN_AC) += plugin_ac.o
 obj-$(CONFIG_MXT_PLIGIN_PI) += plugin_pi.o

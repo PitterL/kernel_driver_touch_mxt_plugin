@@ -51,29 +51,36 @@ int device_wait_irq_state(struct device *dev, int pin_level, long interval)
 {
 	struct mxt_platform_data *pdata = dev_get_platdata(dev);
 	int state;
-	long timeout_retries = 0;
 	unsigned long start_wait_jiffies = jiffies;
+	unsigned long timeout;
 
 	if (!pdata)
 		return -ENODEV;
 
 	/* Reset completion indicated by asserting CHG  */
 	/* Wait for CHG asserted or timeout after 200ms */
+	timeout = start_wait_jiffies + msecs_to_jiffies(interval);
 	do {
-		state = mt_get_gpio_in(pdata->gpio_irq);
+		state = tpd_gpio_input(pdata->gpio_irq);
 		if (state == pin_level)
 			break;
+
 		//usleep_range(1000, 1000); 
 		msleep(1);
-	} while (++timeout_retries < interval);
+
+		if (time_after_eq(jiffies, timeout)) {
+			state = tpd_gpio_input(pdata->gpio_irq);
+			break;
+		}
+	} while (1);
 
 	if (state == pin_level) {
-		dev_info(dev, "irq took (%ld) %ums\n",
-			timeout_retries,jiffies_to_msecs(jiffies - start_wait_jiffies));
+		dev_dbg(dev, "irq took (%ld) %ums\n",
+			interval, jiffies_to_msecs(jiffies - start_wait_jiffies));
 		return 0;
 	}else {
-		dev_warn(dev, "timeout waiting for idle %ums\n",
-			jiffies_to_msecs(jiffies - start_wait_jiffies));
+		dev_warn(dev, "timeout waiting(%ld) for idle %ums\n",
+			interval, jiffies_to_msecs(jiffies - start_wait_jiffies));
 		return -ETIME;
 	}
 }
@@ -267,6 +274,7 @@ int device_por_reset(struct device *dev)
 	msleep(100);
 	device_regulator_enable(dev);
 
+	device_wait_irq_state(dev, 0, 100);
 	return 0;
 }
 
@@ -274,20 +282,28 @@ void device_disable_irq(struct device *dev, const char * name_str)
 {
 	struct mxt_platform_data *pdata = dev_get_platdata(dev);
 
+	dev_info(dev, "irq disabled ++, depth %d, %s\n", atomic_read(&pdata->depth), name_str);
+
 	disable_irq(pdata->irq);
 	atomic_dec(&pdata->depth);
 
-	dev_info(dev, "irq disabled, depth %d, %s\n", atomic_read(&pdata->depth), name_str);
+	WARN_ON(atomic_read(&pdata->depth) < -1);
+
+	dev_dbg(dev, "irq disabled --, depth %d, %s\n", atomic_read(&pdata->depth), name_str);
 }
 
 void device_disable_irq_nosync(struct device *dev, const char * name_str)
 {
 	struct mxt_platform_data *pdata = dev_get_platdata(dev);
 
+	dev_dbg(dev, "irq disabled nosync ++, depth %d, %s\n", atomic_read(&pdata->depth), name_str);
+
 	disable_irq_nosync(pdata->irq);
 	atomic_dec(&pdata->depth);
 
-	dev_info(dev, "irq disabled nosync, depth %d, %s\n", atomic_read(&pdata->depth), name_str);
+	WARN_ON(atomic_read(&pdata->depth) < -1);
+
+	dev_dbg(dev, "irq disabled nosync --, depth %d, %s\n", atomic_read(&pdata->depth), name_str);
 }
 
 void device_disable_irq_wake(struct device *dev)
@@ -295,22 +311,29 @@ void device_disable_irq_wake(struct device *dev)
 	struct mxt_platform_data *pdata = dev_get_platdata(dev);
 
 	disable_irq_wake(pdata->irq);
+
+	dev_info(dev, "irq wake disable, depth %d \n", atomic_read(&pdata->depth));
 }
 
 void device_enable_irq(struct device *dev, const char * name_str)
 {
 	struct mxt_platform_data *pdata = dev_get_platdata(dev);
 
+	dev_dbg(dev, "irq enabled ++, depth %d, %s\n", atomic_read(&pdata->depth), name_str);
+
 	atomic_inc(&pdata->depth);
 	enable_irq(pdata->irq);
 	
-	dev_info(dev, "irq enabled, depth %d, %s\n", atomic_read(&pdata->depth), name_str);
 	WARN_ON(atomic_read(&pdata->depth) > 0);
+
+	dev_dbg(dev, "irq enabled --, depth %d, %s\n", atomic_read(&pdata->depth), name_str);
 }
 
 void device_enable_irq_wake(struct device *dev)
 {
 	struct mxt_platform_data *pdata = dev_get_platdata(dev);
+
+	dev_info(dev, "irq wake enable, depth %d \n", atomic_read(&pdata->depth));
 
 	enable_irq_wake(pdata->irq);
 }
@@ -322,7 +345,7 @@ void device_free_irq(struct device *dev, void *dev_id, const char * name_str)
 	if (pdata && pdata->irq) {
 		dev_info(dev, "irq free, %d %s\n", pdata->irq, name_str);
 		free_irq(pdata->irq, dev_id);
-		pdata->irq = 0;
+		atomic_set(&pdata->depth, 0);
 	}
 }
 
@@ -330,11 +353,16 @@ int device_register_irq(struct device *dev, irq_handler_t handler,
 			irq_handler_t thread_fn, const char *devname, void *dev_id)
 {
 	struct mxt_platform_data *pdata = dev_get_platdata(dev);
+	int ret;
+	
+	dev_info(dev, "register irq %d hanlder %p thread_fn %p\n",pdata->irq, handler, thread_fn);
 
 	if (handler)
-		return request_irq(pdata->irq, handler, pdata->irqflags, devname, dev_id);
+		ret = request_irq(pdata->irq, handler, pdata->irqflags, devname, dev_id);
 	else
-		return request_threaded_irq(pdata->irq, NULL, thread_fn, pdata->irqflags | IRQF_ONESHOT, devname, dev_id);
+		ret = request_threaded_irq(pdata->irq, NULL, thread_fn, pdata->irqflags | IRQF_ONESHOT, devname, dev_id);
+
+	return ret;
 }
 
 static char *device_find_text(char *head, char *delimiters, char **next)
@@ -710,128 +738,3 @@ static struct i2c_driver mxt_driver = {
 };
 
 module_i2c_driver(mxt_driver);
-
-#if 0
-static struct i2c_board_info mxt_i2c_tpd={
-		I2C_BOARD_INFO("atmel_mxt_ts", 0x4a),
-		.platform_data = NULL};
-
-static int tpd_probe(struct i2c_client *client,
-				const struct i2c_device_id *id)
-{
-	int ret;
-	
-	pr_info("[mxt] tpd_probe\n");
-
-	ret = mxt_probe(client,id);
-	if(ret){
-		pr_info("[mxt] tpd_probe failed %d\n", ret);
-		return ret;
-	}
-
-	tpd_load_status = 1;
-
-	return 0;
-}
-
-static int tpd_remove(struct i2c_client *client)
-{
-	tpd_load_status = 0;
-
-	pr_info("[mxt] tpd_remove\n");
-
-	return mxt_remove(client);
-}
-
-static const struct i2c_device_id mxt_id[] = {
-	{ "qt602240_ts", 0 },
-	{ "atmel_mxt_ts", 0 },
-	{ "atmel_mxt_tp", 0 },
-	{ "mXT224", 0 },
-	{ "Atmel MXT336T", 0 },
-	{ }
-};
-MODULE_DEVICE_TABLE(i2c, mxt_id);
-
-static struct i2c_driver tpd_driver = {
-	.driver = {
-		.name	= "atmel_mxt_ts",
-		.owner	= THIS_MODULE,
-#if !(defined(CONFIG_HAS_EARLYSUSPEND) || defined(CONFIG_FB))
-		.pm	= &mxt_pm_ops,
-#endif
-	},
-	.probe		= tpd_probe,
-	.remove		= tpd_remove,
-	.shutdown	= mxt_shutdown,
-	.id_table	= mxt_id,
-};
-
-static int tpd_local_init(void)
-{
-	int ret;
-	
-	pr_info("[mxt] Atmel MXT I2C Touchscreen Driver (Built %s @ %s)\n", __DATE__, __TIME__);
-
-	ret = i2c_add_driver(&tpd_driver);
-	if(ret) {
-		pr_err("[mxt] error unable to add i2c driver.\n");
-		return ret;
-	}
-
-	if(tpd_load_status == 0) {  // disable auto load touch driver for linux3.0 porting
-		pr_err("[mxt] atmel add error touch panel driver\n");
-		i2c_del_driver(&tpd_driver);
-		return -ENODEV;
-	}
-
-	pr_info("[mxt] %s, success %d\n", __FUNCTION__, __LINE__);
-	tpd_type_cap = 1;
-	
-	return 0;
-}
-
-static void tpd_suspend(struct device *h)
-{
-	// here you should call mxt_early_suspend() above if you don't use stand power interface
-}
-
-static void tpd_resume(struct device *h)
-{
-	// here you should call mxt_late_resume() above if you don't use stand power interface
-}
-
-static struct tpd_driver_t tpd_device_driver = {
-	.tpd_device_name = "atmel_mxt_ts",
-	.tpd_local_init = tpd_local_init,
-	.suspend =tpd_suspend,
-	.resume = tpd_resume,
-	//.tpd_have_button = 0,
-};
-/* called when loaded into kernel */
-static int __init tpd_driver_init(void)
-{
-	int ret;
-	
-	pr_info("[mxt] tpd_driver_init\n");
-
-	i2c_register_board_info(0, &mxt_i2c_tpd, 1);
-
-	ret = tpd_driver_add(&tpd_device_driver);
-	if(ret)
-		pr_err("[mxt] tpd_driver_init failed %d\n", ret);
-
-	return ret;
-}
-
-/* should never be called */
-static void __exit tpd_driver_exit(void)
-{
-	pr_info("[mxt] tpd_driver_exit\n");
-	tpd_driver_remove(&tpd_device_driver);
-}
-
-module_init(tpd_driver_init);
-module_exit(tpd_driver_exit);
-
-#endif

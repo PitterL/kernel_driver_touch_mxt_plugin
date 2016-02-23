@@ -37,10 +37,6 @@ mxt-objs += plugin/plugin_wdg.o
 endif
 endif
 
-ifdef CONFIG_MXT_PLUGIN_HAND
-mxt-objs += plugin/plugin_hand.o
-endif
-
 ifdef CONFIG_MXT_DEBUG_ENABLE
 KBUILD_CFLAGS	+= -DDEBUG
 endif

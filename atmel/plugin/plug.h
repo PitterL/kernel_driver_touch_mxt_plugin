@@ -912,28 +912,6 @@ struct plugin_wdg{
 	void (*active_thread)(void *pl_dev);
 };
 
-struct plugin_tick{
-	void *obs;
-	void *cfg;
-
-	//client
-	int (*init)(struct plugin_tick *p);
-	void (*deinit)(struct plugin_tick *p);
-	void (*hook_t6)(struct plugin_tick *p, u8 status);
-	int (*hook_t100)(struct plugin_tick *p, int id, int x, int y, struct ext_info *in);
-	void (*start)(struct plugin_tick *p, bool resume);
-	void (*stop)(struct plugin_tick *p);
-	void (*pre_process)(struct plugin_tick *p, int pl_flag);
-	long (*post_process)(struct plugin_tick *p, unsigned long pl_flag);
-	int (*show)(struct plugin_tick *p);
-	int (*store)(struct plugin_tick *p, const char *buf, size_t count);
-
-	//host
-	void *dev; //host dev, point to plug device
-	const struct mxt_config *dcfg;
-	void (*set_and_clr_flag)(void * pl_dev, int mask_s, int mask_c);
-};
-
 struct plug_observer{
 	unsigned long flag;
 };
@@ -942,7 +920,6 @@ struct plug_config{
 };
 
 struct plug_if_device {
-	struct plugin_tick tick;
 	struct plugin_cal calibration;
 	struct plugin_ac ac_noise;
 	struct plugin_proci proci;
@@ -964,7 +941,6 @@ struct plug_interface{
 
 	struct plug_if_device devices;
 
-	struct plugin_tick *tck;
 	struct plugin_cal *cal;
 	struct plugin_ac *ac;
 	struct plugin_proci *pi;
@@ -980,10 +956,6 @@ void print_trunk(const u8 *data, int pos, int offset);
 void print_dec16_buf(const char *level,const char *prefix_str,const s16 *buf,int num);
 size_t dec_dump_to_buffer(const char *prefix, const void *buf, size_t num, int groupsize,
 			char *linebuf, size_t linebuflen);
-
-#if defined(CONFIG_MXT_PLUGIN_SUPPORT)
-#include "plugin_tick.h"
-#endif
 
 #if defined(CONFIG_MXT_PLIGIN_CAL)
 #include "plugin_cal.h"
