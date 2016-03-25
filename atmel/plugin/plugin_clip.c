@@ -524,13 +524,18 @@ static int plugin_clip_hook_t9_t100_scraux(struct plugin_clip *p, struct scr_inf
 
 	pa = 0;
 	if (test_flag(CLP_FLAG_FUNC_PALM, &obs->flag)) {
-		pa = clip_pa_hook_t9_t100_points_scraux(p, in, flag);
-		if (pa ==  -ERANGE)
-			in->status |= MXT_SCRAUX_STS_SUP;
-		/*   //don't change the flag if sup already set
-		else
-			in->status &= ~MXT_SCRAUX_STS_SUP;
-		*/
+		if (in->status & MXT_SCRAUX_STS_SUP)
+			pa = -ERANGE;
+		else {
+			pa = clip_pa_hook_t9_t100_points_scraux(p, in, flag);
+			if (pa ==  -ERANGE)
+				in->status |= MXT_SCRAUX_STS_SUP;
+			//don't change the flag if sup already set
+			/*
+			else
+				in->status &= ~MXT_SCRAUX_STS_SUP;
+			*/
+		}
 	}
 
 	dev_dbg(dev,  "[mxt] scr status %x pa %d\n",in->status, pa);

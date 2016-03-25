@@ -17,10 +17,6 @@ obj-$(CONFIG_TOUCHSCREEN_ATMEL_MXTS) += mxt.o
 mxt-objs := atmel_mxt_ts.o
 mxt-objs += io/mtk/l/io.o
 
-ifdef CONFIG_MXT_PLUGIN_SUPPORT
-mxt-objs += plugin/plugin_tick.o
-endif
-
 ifdef CONFIG_MXT_PLIGIN_CAL
 mxt-objs += plugin/plugin_cal.o
 endif

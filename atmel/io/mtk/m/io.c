@@ -47,6 +47,13 @@ int mxt_probe(struct i2c_client *client,const struct i2c_device_id *id);
 int mxt_remove(struct i2c_client *client);
 void mxt_shutdown(struct i2c_client *client);
 
+#define GPIO_OUT_ZERO 0
+#define GPIO_OUT_ONE 1
+static inline int tpd_gpio_input(unsigned gpio)
+{
+	return gpio_get_value(gpio);
+}
+
 int device_wait_irq_state(struct device *dev, int pin_level, long interval)
 {
 	struct mxt_platform_data *pdata = dev_get_platdata(dev);
@@ -140,6 +147,7 @@ void device_regulator_disable(struct device *dev)
 
 	if (pdata->reg_vdd)
 		regulator_disable(pdata->reg_vdd);
+
 	if (pdata->common_vdd_supply == 0) {
 		if (pdata->reg_avdd)
 			regulator_disable(pdata->reg_avdd);
@@ -595,14 +603,14 @@ static bool device_parse_platform(struct device *dev)
 	device_parse_setup_string(dev, key_button, &pdata->keylist);
 	device_parse_setup_string(dev, key_gesture, &pdata->keylist);
 
-	//TPD dts initialize
-	tpd_get_dts_info();
-
 	/* get gpio pin & debounce time */
 	/*
 	* kernel standard uses pin control to setup gpio
 	* This example doesn't include pin control part.
 	*/
+
+	//TPD dts initialize
+	tpd_get_dts_info();	
 	node = of_find_matching_node(node, touch_of_match);
 	if(node) {
 		of_property_read_u32_array(node, "debounce", ints, ARRAY_SIZE(ints));
@@ -627,7 +635,7 @@ static bool device_parse_platform(struct device *dev)
 	pdata->gpio_reset = GTP_RST_PORT;
 	//----- here write irq io number
 	//transfer to IRQ
-	pdata->irqflags = EINTF_TRIGGER_LOW;
+	pdata->irqflags = /*EINTF_TRIGGER_LOW*/IRQF_TRIGGER_LOW;
 	//---- here write reset io number
 
 	error = device_gpio_configure(dev);
@@ -642,7 +650,10 @@ static bool device_parse_platform(struct device *dev)
 		goto exit_parser;
 	}
 
+	//ret = tpd_driver_add(&tpd_device_driver)
+
 	dev_err(dev, "device parse dt successful\n");
+	
 	return 0;
 
 exit_parser:
@@ -712,10 +723,12 @@ static const struct i2c_device_id mxt_id[] = {
 MODULE_DEVICE_TABLE(i2c, mxt_id);
 
 #ifdef CONFIG_OF
+extern struct of_device_id mxt_match_table[];
+/*
 static struct of_device_id mxt_match_table[] = {
 	{ .compatible = "mediatek,CAP_TOUCH",},
 	{ },
-};
+};*/
 #else
 #define mxt_match_table NULL
 #endif

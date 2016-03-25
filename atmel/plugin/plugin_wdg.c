@@ -461,7 +461,7 @@ static int init_ti(struct plugin_wdg *p)
 	struct wd_config *cfg = p->cfg;
 	struct timer_config *ti_cfg = &cfg->timer;
 
-	ti_cfg->interval_wd_check = 2 * HZ + (HZ/10);
+	ti_cfg->interval_wd_check = 3 * HZ + (HZ/10);
 	ti_cfg->min_check_count = 2;
 	ti_cfg->failed_reset_retry = 3;
 

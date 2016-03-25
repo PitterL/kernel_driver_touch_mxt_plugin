@@ -1153,16 +1153,10 @@ static struct reg_config mxt_dwakeup_cfg[] = {
 #endif
 
 	{.reg = MXT_GEN_ACQUISITIONCONFIG_T8, .instance = 0, 
-		.offset = 2,.buf = {2}, .len = 1, .mask = 0,.flag = BIT_MASK(OP_SET)},
-
-	{.reg = MXT_GEN_ACQUISITIONCONFIG_T8, .instance = 0, 
-		.offset = 4,.buf = {10}, .len = 1, .mask = 0,.flag = BIT_MASK(OP_SET)},
-
-	{.reg = MXT_GEN_ACQUISITIONCONFIG_T8, .instance = 0, 
-		.offset = 11,.buf = {2}, .len = 1, .mask = 0,.flag = BIT_MASK(OP_SET)},
-
-	{.reg = MXT_GEN_ACQUISITIONCONFIG_T8, .instance = 0, 
 		.offset = 14,.buf = {0x1}, .len = 1, .mask = 0,.flag = BIT_MASK(OP_SET)},
+
+	{.reg = MXT_GEN_ACQUISITIONCONFIG_T8, .instance = 0, 
+		.offset = 10,.buf = {0xa, 2, 2}, .len = 3, .mask = 0,.flag = BIT_MASK(OP_SET)},
 
 	{.reg = MXT_SPT_GPIOPWM_T19, .instance = 0, 
 		.offset = 0,.buf = {1,0,0,15}, .len = 4, .mask = 0,.flag = BIT_MASK(OP_SET)},
@@ -1199,7 +1193,7 @@ static struct reg_config mxt_dwakeup_cfg[] = {
 		.offset = 0,.buf = {0}, .len = 1, .mask = 0x1,.flag = BIT_MASK(OP_SET)},
 #endif
 	{.reg = MXT_TOUCH_MULTITOUCHSCREEN_T100,
-		.offset = 0,.buf = {0}, .len = 1, .mask = 0x2,.flag = BIT_MASK(OP_SET)},
+		.offset = 0,.buf = {0x0}, .len = 1, .mask = 0x2,.flag = BIT_MASK(OP_SET)},
 /*
 	{.reg = MXT_TOUCH_MULTITOUCHSCREEN_T100,
 		.offset = 32,.buf = {35}, .len = 1, .mask = 0,.flag = BIT_MASK(P_COMMON)},
@@ -1207,12 +1201,19 @@ static struct reg_config mxt_dwakeup_cfg[] = {
 	{.reg = MXT_TOUCH_MULTITOUCHSCREEN_T100,
 		.offset = 39,.buf = {0x0,0x0}, .len = 2, .mask = 0x2,.flag = BIT_MASK(OP_SET)},
 
+	{.reg = MXT_SPT_SELFCAPCONFIG_T111,
+		.offset = 4,.buf = {8, 8}, .len = 2, .mask = 0,.flag = BIT_MASK(OP_SET)},
+
+	{.reg = MXT_SPT_SELFCAPCONFIG_T111, .instance = 1,
+		.offset = 4,.buf = {8, 8}, .len = 2, .mask = 0,.flag = BIT_MASK(OP_SET)},
+
 	{.reg = MXT_PROCG_NOISESUPSELFCAP_T108,
 		.offset = 0,.buf = {0}, .len = 1, .mask = 0x1,.flag = BIT_MASK(OP_SET)},
 
 	{.reg = MXT_GEN_POWERCONFIG_T7,
-		.offset = 0,.buf = {80,10}, .len = 2, .mask = 0,.flag = BIT_MASK(OP_SET)},
+		.offset = 0,.buf = {60,40, 5}, .len = 3, .mask = 0,.flag = BIT_MASK(OP_SET)},
 
+/*
 	{.reg = MXT_PROCI_AUXTOUCHCONFIG_T104,
 		.offset = 2,.buf = {0x28}, .len = 1, .mask = 0,.flag = BIT_MASK(OP_SET)},
 
@@ -1221,9 +1222,10 @@ static struct reg_config mxt_dwakeup_cfg[] = {
 
 	{.reg = MXT_PROCI_TOUCHSUPPRESSION_T42,
 		.offset = 1,.buf = {0X0,0x32,0x19,0x80,0x0,0x0,0x0,0x0,0x0,0xFF}, .len = 10, .mask = 0,.flag = BIT_MASK(OP_SET)},
+*/
 	{.reg = MXT_SPT_USERDATA_T38,
 			.offset = 0,.buf = {0}, .len = 0, .mask = 0x1, .flag = BIT_MASK(OP_SET),  .sleep = 100},
-
+/*
 	{.reg = MXT_SPT_DYNAMICCONFIGURATIONCONTROLLER_T70, .instance = 3,
 		.offset = 0,.buf = {1}, .len = 1, .mask = 0x1,.flag = BIT_MASK(OP_SET)},
 	{.reg = MXT_SPT_DYNAMICCONFIGURATIONCONTROLLER_T70, .instance = 4,
@@ -1232,7 +1234,7 @@ static struct reg_config mxt_dwakeup_cfg[] = {
 		.offset = 0,.buf = {1}, .len = 1, .mask = 0x1,.flag = BIT_MASK(OP_SET)},
 	{.reg = MXT_SPT_DYNAMICCONFIGURATIONCONTROLLER_T70, .instance = 6,
 		.offset = 0,.buf = {1}, .len = 1, .mask = 0x1,.flag = BIT_MASK(OP_SET)},
-
+*/
 	//dummy
 	{MXT_SPT_USERDATA_T38,0,
 		0,.buf = {0},0,0x1,BIT_MASK(OP_SET)},

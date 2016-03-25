@@ -246,7 +246,7 @@ static int msc_psd_get_data(struct plugin_misc *p, struct psd_code *code)
 
 	int ret = -EINVAL;
 
-	int retry = 3;
+	int retry = 2;
 
 	if (!code)
 		return ret;
@@ -262,7 +262,6 @@ static int msc_psd_get_data(struct plugin_misc *p, struct psd_code *code)
 						break;
 				}
 			}
-			msleep(10);
 		}while(--retry);
 
 		if(!retry)

@@ -141,6 +141,7 @@ void device_regulator_disable(struct device *dev)
 
 	if (pdata->reg_vdd)
 		regulator_disable(pdata->reg_vdd);
+
 	if (pdata->common_vdd_supply == 0) {
 		if (pdata->reg_avdd)
 			regulator_disable(pdata->reg_avdd);
@@ -373,7 +374,7 @@ void device_disable_irq(struct device *dev, const char * name_str)
 {
 	struct mxt_platform_data *pdata = dev_get_platdata(dev);
 
-	dev_info(dev, "irq disabled ++, depth %d, %s\n", atomic_read(&pdata->depth), name_str);
+	dev_dbg(dev, "irq disabled ++, depth %d, %s\n", atomic_read(&pdata->depth), name_str);
 
 	disable_irq(pdata->irq);
 	atomic_dec(&pdata->depth);

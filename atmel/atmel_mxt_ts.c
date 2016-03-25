@@ -177,11 +177,6 @@
 #define MXT_T9_PRESS		(1 << 6)
 #define MXT_T9_DETECT		(1 << 7)
 
-struct t9_range {
-	u16 x;
-	u16 y;
-} __packed;
-
 /* MXT_TOUCH_MULTI_T9 orient */
 #define MXT_T9_ORIENT_SWITCH	(1 << 0)
 
@@ -276,6 +271,10 @@ struct t9_range {
 #define MXT_PIXELS_PER_MM	20
 
 #define DEBUG_MSG_MAX		200
+
+#ifndef INIT_COMPLETION
+#define INIT_COMPLETION(x)	((x).done = 0)
+#endif
 
 struct mxt_info {
 	u8 family_id;
@@ -848,7 +847,7 @@ static int __mxt_cache_write(struct i2c_client *client,u16 addr,
 	}else {
 		extend = 2;
 		if (test_flag(I2C_ACCESS_NO_CACHE,&flag)) {
-			buf = kmalloc( len + extend, GFP_KERNEL);
+			buf = kmalloc(len + extend, GFP_KERNEL);
 			if (!buf)
 				return -ENOMEM;
 			w_cache = w_cache_pa = buf;
@@ -2493,7 +2492,7 @@ static int mxt_acquire_irq(struct mxt_data *data)
 		return error;
 	}
 
-	mxt_process_messages_until_invalid(data);
+	//mxt_process_messages_until_invalid(data);
 
 	return 0;
 }
@@ -3570,10 +3569,6 @@ static int mxt_initialize_t100_input_device(struct mxt_data *data)
 	set_bit(INPUT_PROP_DIRECT, input_dev->propbit);
 #endif
 
-	if ((test_flag_8bit(MXT_T100_TCHAUX_AMPL, &data->tchcfg[MXT_T100_TCHAUX])))
-		input_set_abs_params(input_dev, ABS_PRESSURE,
-					 0, 255, 0, 0);
-
 	/* For multi touch */
 	error = input_mt_init_slots(input_dev, data->num_touchids, INPUT_MT_DIRECT);
 	if (error) {
@@ -3750,7 +3745,7 @@ static int mxt_configure_objects(struct mxt_data *data)
 #endif
 	data->enable_reporting = true;
 
-	dev_info(&client->dev, "configure objects finished\r\n");msleep(500);
+	dev_info(&client->dev, "configure objects finished\r\n");
 	
 	return 0;
 }
@@ -3953,7 +3948,7 @@ static ssize_t mxt_cmd_store(struct device *dev,
 
 	dev_info(dev, "[mxt]%s\n",buf);
 
-	if (sscanf(buf, "%x", &cmd) >= 1) {
+	if (sscanf(buf, "%d\n", &cmd) >= 1) {
 		dev_info(dev, "[mxt] cmd %d (%zd): %s\n",cmd,ARRAY_SIZE(command_list),command_list[cmd]);
 		if (cmd >=0 && cmd < ARRAY_SIZE(command_list)) {
 			if (cmd == 0) {					
@@ -4635,7 +4630,7 @@ static DEVICE_ATTR(hw_version, S_IRUGO, mxt_hw_version_show, NULL);
 static DEVICE_ATTR(object, S_IRUGO, mxt_object_show, NULL);
 static DEVICE_ATTR(update_fw, S_IWUSR, NULL, mxt_update_fw_store);
 static DEVICE_ATTR(update_cfg, S_IWUSR, NULL, mxt_update_cfg_store);
-static DEVICE_ATTR(debug_v2_enable, S_IWUGO | S_IRUGO, mxt_debug_v2_enable_show, mxt_debug_v2_enable_store);
+static DEVICE_ATTR(debug_v2_enable, S_IWUSR | S_IRUSR, mxt_debug_v2_enable_show, mxt_debug_v2_enable_store);
 static DEVICE_ATTR(debug_notify, S_IRUGO, mxt_debug_notify_show, NULL);
 static DEVICE_ATTR(debug_enable, S_IWUSR | S_IRUSR, mxt_debug_enable_show,
 			mxt_debug_enable_store);
@@ -4781,18 +4776,19 @@ static void mxt_start(struct mxt_data *data, bool resume)
 			}
 		}
 #if defined(CONFIG_MXT_PLUGIN_SUPPORT)
-	ret = mxt_plugin_wakeup_disable(&data->plug);
+		ret = mxt_plugin_wakeup_disable(&data->plug);
 #endif
-	mxt_process_messages_until_invalid(data);
+		mxt_process_messages_until_invalid(data);
 
-	mxt_set_reset(data, 0);
-
-#if defined(CONFIG_MXT_PLUGIN_SUPPORT)
-		mxt_plugin_start(&data->plug, resume);
-#endif
+		mxt_set_reset(data, 0);
 	}
 
+#if defined(CONFIG_MXT_PLUGIN_SUPPORT)
+	mxt_plugin_start(&data->plug, resume);
+#endif
+
 	mxt_reset_slots(data);  //it's strange some platform will resverse some points in last touch
+
 	data->enable_wakeup = 0;
 	data->enable_reporting = true;
 	data->suspended = false;
@@ -4810,7 +4806,7 @@ static void mxt_stop(struct mxt_data *data,bool suspend)
 	struct device *dev = &data->client->dev;
 	struct mxt_platform_data *pdata = data->pdata;
 	int ret = 0;
-	
+
 	if (data->suspended || data->in_bootloader)
 		return;
 
@@ -4820,29 +4816,29 @@ static void mxt_stop(struct mxt_data *data,bool suspend)
 
 	data->enable_reporting = false;
 
+#if defined(CONFIG_MXT_PLUGIN_SUPPORT)
+	mxt_plugin_stop(&data->plug,suspend);
+#endif
+
 	if (pdata->use_regulator)
 		device_regulator_disable(dev);
 	else{
 		mxt_set_t7_power_cfg(data, MXT_POWER_CFG_DEEPSLEEP);
-#if defined(CONFIG_MXT_PLUGIN_SUPPORT)
-		mxt_plugin_stop(&data->plug,suspend);
-#endif
-	}
 
-	if (suspend) {
+		if (suspend) {
 #if defined(CONFIG_MXT_PLUGIN_SUPPORT)
-		ret = mxt_plugin_wakeup_enable(&data->plug);
+			ret = mxt_plugin_wakeup_enable(&data->plug);
 #endif
-		if (ret == -EBUSY) {
-			dev_info(dev, "mxt_stop: set wakeup enable\n");
-			mxt_process_messages_until_invalid(data);
-			device_enable_irq(dev, __func__);
-			device_enable_irq_wake(dev);
-			set_bit(MXT_WK_ENABLE,&data->enable_wakeup);
-			clear_bit(MXT_EVENT_IRQ_FLAG,&data->busy);
+			if (ret == -EBUSY) {
+				dev_info(dev, "mxt_stop: set wakeup enable\n");
+				mxt_process_messages_until_invalid(data);
+				device_enable_irq(dev, __func__);
+				device_enable_irq_wake(dev);
+				set_bit(MXT_WK_ENABLE,&data->enable_wakeup);
+				clear_bit(MXT_EVENT_IRQ_FLAG,&data->busy);
+			}
 		}
 	}
-
 	mxt_reset_slots(data);
 
 	data->suspended = true;
@@ -4877,7 +4873,7 @@ static int mxt_handle_pdata(struct mxt_data *data)
 	struct mxt_platform_data *pdata;
 
 	pdata = dev_get_platdata(dev);
-	dev_info(dev, "mxt pdata %p\n", pdata);
+	dev_dbg(dev, "mxt pdata %p\n", pdata);
 	if (!pdata) {
 		dev_info(dev, "mxt alloc pdata\n");
 		pdata = kzalloc(sizeof(*pdata), GFP_KERNEL);

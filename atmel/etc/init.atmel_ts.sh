@@ -93,7 +93,7 @@ echo 1 > en_gesture
 #	bit[2]  SUP
 #	bit[3]  POS
 #echo "wd enable 3" > plugin
-echo "pl enable 7" > plugin
+echo "pl enable 1e" > plugin
 #chmod 440 t19
 #chmod 440 update_cfg
 #chmod 440 update_fw

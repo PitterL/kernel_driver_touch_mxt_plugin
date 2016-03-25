@@ -315,12 +315,6 @@ struct t9_t100_config {
 #define MXT_T9_PRESS		(1 << 6)
 //#define MXT_T9_DETECT		(1 << 7)
 
-/*
-struct t9_range {
-	u16 x;
-	u16 y;
-} __packed;
-*/
 /* MXT_TOUCH_MULTI_T9 orient */
 #define MXT_T9_ORIENT_SWITCH	(1 << 0)
 
@@ -678,7 +672,7 @@ struct mxt_config {
 	struct t96_config t96;
 	struct t104_config t104;
 	struct t113_config t113;
-}__packed;
+};
 
 #define PL_STATUS_FLAG_NOISE						(1<<0)
 #define PL_STATUS_FLAG_VERY_NOISE				(1<<1)
