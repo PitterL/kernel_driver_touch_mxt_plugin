@@ -113,9 +113,6 @@
 #include <linux/regulator/consumer.h>
 #include <linux/gpio.h>
 #include <linux/kthread.h>
-#if defined(CONFIG_MXT_I2C_DMA)
-#include <linux/dma-mapping.h>
-#endif
 
 #if defined(CONFIG_FB)
 #include <linux/notifier.h>
@@ -129,6 +126,10 @@
 
 #include "plugin/plug.h"
 #include "io/io.h"
+
+#if defined(CONFIG_MXT_I2C_DMA)
+#include <linux/dma-mapping.h>
+#endif
 
 /* Configuration file */
 #define MXT_CFG_MAGIC		"OBP_RAW V1"
@@ -1098,6 +1099,7 @@ static int mxt_write_reg_cfg(struct mxt_data *data, struct reg_config *config, u
 	return ret;
 }
 
+#if defined(CONFIG_MXT_PLUGIN_SUPPORT)
 static int mxt_read_reg_cfg(struct mxt_data *data, struct reg_config *config, unsigned long flag)
 {
 	struct device *dev = &data->client->dev;
@@ -1189,7 +1191,7 @@ static int mxt_read_reg_cfg(struct mxt_data *data, struct reg_config *config, un
 
 	return ret;
 }
-
+#endif
 
 static int mxt_bootloader_read(struct mxt_data *data, u8 *val, unsigned int count)
 {
@@ -2415,6 +2417,10 @@ static int mxt_process_message_thread(void *dev_id)
 	long interval = MAX_SCHEDULE_TIMEOUT;
 	int post = false;
 	irqreturn_t iret;
+
+	/*
+		you could plug update fw/cfg code here for skip selinux check by shell
+	*/
 	
 	while (!kthread_should_stop()) {
 
@@ -3008,6 +3014,7 @@ static int mxt_set_t7_power_cfg(struct mxt_data *data, u8 sleep)
 			new_config);
 	if (error)
 		return error;
+
 	if (sleep == MXT_POWER_CFG_RUN)
 		mxt_set_smartscan_sync_cfg(data, sleep);
 

@@ -1877,13 +1877,7 @@ static int mxt_plugin_init(struct mxt_data *data)
 		memset(pl->wd, 0, sizeof(struct plugin_wdg));
 	}
 
-	if (pl->cal->init || pl->ac->init || pl->pi->init|| pl->msc->init|| pl->clp->init || pl->wd->init) {
-		pl->inited = true;
-		if (pl->cal->init) {
-			mxt_plugin_hook_t6(pl,MXT_T6_STATUS_RESET|MXT_T6_STATUS_CAL);//init as reset status
-			mxt_plugin_hook_t6(pl,0);
-		}
-	}
+	pl->inited = true;
 
 	dev_info(dev, "init plugin successfully\r\n");
 

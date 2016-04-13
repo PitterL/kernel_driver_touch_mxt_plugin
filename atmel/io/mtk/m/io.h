@@ -3,6 +3,9 @@
 
 #include <linux/types.h>
 
+#define CONFIG_MXT_I2C_DMA
+#define CONFIG_MXT_I2C_EXTFLAG
+
 #define MXT_I2C_DMA_ADDR_FLAG	I2C_RS_FLAG | I2C_ENEXT_FLAG | I2C_DMA_FLAG
 
 #define MXT_EVENT_IRQ 1
@@ -133,23 +136,8 @@ int device_register_irq(struct device *dev, irq_handler_t handler,
 int device_parse_default_chip(void *dev_id, struct device *dev);
 void device_release_chip(struct device *dev);
 
-#if defined(TPD_DEVICE)
-#include <mach/mt_pm_ldo.h>
-#include <cust_eint.h>
-#include "cust_gpio_usage.h"
-#include <mach/mt_gpio.h>
-#include <mach/mt_reg_base.h>
-#include <mach/mt_typedefs.h>
-#include <mach/eint.h>
-#include <mach/mt_pm_ldo.h>
 #include "tpd.h"
-#else
 #include <io/mtk/dummy.h>
-#endif
-
-#if defined(CONFIG_FB)
-#undef CONFIG_FB
-#endif
 
 #endif
 

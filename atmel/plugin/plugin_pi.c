@@ -1168,7 +1168,7 @@ static struct reg_config mxt_dwakeup_cfg[] = {
 		.offset = 0,.buf = {0}, .len = 1, .mask = 0x1,.flag = BIT_MASK(OP_SET)},
 
 	{.reg = MXT_PROCI_LENSBENDING_T65,
-		.offset = 0,.buf = {0}, .len = 0, .mask = 0x1,.flag = BIT_MASK(OP_SET)},
+		.offset = 0,.buf = {0}, .len = 1, .mask = 0x1,.flag = BIT_MASK(OP_SET)},
 
 	{ .reg = MXT_PROCI_RETRANSMISSIONCOMPENSATION_T80,
 		.offset = 0,.buf = {0}, .len = 0, .mask = 0x1,.flag = BIT_MASK(OP_SET)},
@@ -1202,16 +1202,19 @@ static struct reg_config mxt_dwakeup_cfg[] = {
 		.offset = 39,.buf = {0x0,0x0}, .len = 2, .mask = 0x2,.flag = BIT_MASK(OP_SET)},
 
 	{.reg = MXT_SPT_SELFCAPCONFIG_T111,
-		.offset = 4,.buf = {8, 8}, .len = 2, .mask = 0,.flag = BIT_MASK(OP_SET)},
+		.offset = 4,.buf = {8}, .len = 1, .mask = 0,.flag = BIT_MASK(OP_SET)},
 
 	{.reg = MXT_SPT_SELFCAPCONFIG_T111, .instance = 1,
-		.offset = 4,.buf = {8, 8}, .len = 2, .mask = 0,.flag = BIT_MASK(OP_SET)},
+		.offset = 4,.buf = {8}, .len = 1, .mask = 0,.flag = BIT_MASK(OP_SET)},
 
 	{.reg = MXT_PROCG_NOISESUPSELFCAP_T108,
 		.offset = 0,.buf = {0}, .len = 1, .mask = 0x1,.flag = BIT_MASK(OP_SET)},
 
+	{.reg = MXT_PROCI_GRIPSUPPRESSION_T40,
+		.offset = 0,.buf = {1,100,100,100,100}, .len = 5, .mask = 0,.flag = BIT_MASK(OP_SET)},
+
 	{.reg = MXT_GEN_POWERCONFIG_T7,
-		.offset = 0,.buf = {60,40, 5}, .len = 3, .mask = 0,.flag = BIT_MASK(OP_SET)},
+		.offset = 0,.buf = {70,16, 5}, .len = 3, .mask = 0,.flag = BIT_MASK(OP_SET)},
 
 /*
 	{.reg = MXT_PROCI_AUXTOUCHCONFIG_T104,

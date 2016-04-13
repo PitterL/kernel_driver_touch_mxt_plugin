@@ -611,7 +611,7 @@ static bool device_parse_platform(struct device *dev)
 
 	//TPD dts initialize
 	tpd_get_dts_info();	
-	node = of_find_matching_node(node, touch_of_match);
+	node = of_find_matching_node(NULL, touch_of_match);
 	if(node) {
 		of_property_read_u32_array(node, "debounce", ints, ARRAY_SIZE(ints));
 		gpiopin = ints[0];
@@ -722,32 +722,130 @@ static const struct i2c_device_id mxt_id[] = {
 };
 MODULE_DEVICE_TABLE(i2c, mxt_id);
 
+static int tpd_probe(struct i2c_client *client,
+				const struct i2c_device_id *id)
+{
+	int ret;
+	
+	pr_info("[mxt] tpd_probe\n");
+
+	ret = mxt_probe(client,id);
+	if(ret){
+		pr_info("[mxt] tpd_probe failed %d\n", ret);
+		return ret;
+	}
+
+	tpd_load_status = 1;
+
+	return 0;
+}
+
+static int tpd_remove(struct i2c_client *client)
+{
+	tpd_load_status = 0;
+
+	pr_info("[mxt] tpd_remove\n");
+
+	return mxt_remove(client);
+}
+
 #ifdef CONFIG_OF
-extern struct of_device_id mxt_match_table[];
-/*
 static struct of_device_id mxt_match_table[] = {
-	{ .compatible = "mediatek,CAP_TOUCH",},
-	{ },
-};*/
-#else
-#define mxt_match_table NULL
+       { .compatible = "mediatek,CAP_TOUCH",},
+       { },
+};
 #endif
 
-static struct i2c_driver mxt_driver = {
+static struct i2c_driver tpd_driver = {
 	.driver = {
 		.name	= "atmel_mxt_ts",
 		.owner	= THIS_MODULE,
 #ifdef CONFIG_OF
 		.of_match_table = mxt_match_table,
 #endif
-#if !(defined(CONFIG_HAS_EARLYSUSPEND) || defined(CONFIG_FB))
-		.pm	= &mxt_pm_ops,
-#endif
+		//.pm	= &mxt_pm_ops,
 	},
-	.probe		= mxt_probe,
-	.remove		= mxt_remove,
+	.probe		= tpd_probe,
+	.remove		= tpd_remove,
 	.shutdown	= mxt_shutdown,
 	.id_table	= mxt_id,
 };
 
-module_i2c_driver(mxt_driver);
+static int tpd_local_init(void)
+{
+	int ret;
+	
+	pr_info("[mxt] Atmel MXT I2C Touchscreen Driver \n");
+
+	ret = i2c_add_driver(&tpd_driver);
+	if(ret) {
+		pr_err("[mxt] error unable to add i2c driver.\n");
+		return ret;
+	}
+
+	if(tpd_load_status == 0) {  // disable auto load touch driver for linux3.0 porting
+		pr_err("[mxt] atmel add error touch panel driver\n");
+		i2c_del_driver(&tpd_driver);
+		return -ENODEV;
+	}
+
+	pr_info("[mxt] %s, success %d\n", __FUNCTION__, __LINE__);
+	tpd_type_cap = 1;
+	
+	return 0;
+}
+
+static void tpd_suspend(struct device *h)
+{
+#if !(defined(CONFIG_HAS_EARLYSUSPEND) || defined(CONFIG_FB))
+	struct device *dev = t_dev;
+
+	if (dev)
+		mxt_suspend(t_dev);
+#endif
+}
+
+static void tpd_resume(struct device *h)
+{
+#if !(defined(CONFIG_HAS_EARLYSUSPEND) || defined(CONFIG_FB))
+	struct device *dev = t_dev;
+
+	if (dev)
+		mxt_resume(t_dev);
+#endif
+}
+
+static struct tpd_driver_t tpd_device_driver = {
+	.tpd_device_name = "atmel_mxt_ts",
+	.tpd_local_init = tpd_local_init,
+	.suspend =tpd_suspend,
+	.resume = tpd_resume,
+	//.tpd_have_button = 0,
+};
+
+/* called when loaded into kernel */
+static int __init tpd_driver_init(void)
+{
+	int ret;
+	
+	pr_info("[mxt] tpd_driver_init\n");
+
+	//dts has registerred i2c devices
+	//i2c_register_board_info(0, &mxt_i2c_tpd, 1);
+
+	ret = tpd_driver_add(&tpd_device_driver);
+	if(ret)
+		pr_err("[mxt] tpd_driver_init failed %d\n", ret);
+
+	return ret;
+}
+
+/* should never be called */
+static void __exit tpd_driver_exit(void)
+{
+	pr_info("[mxt] tpd_driver_exit\n");
+	tpd_driver_remove(&tpd_device_driver);
+}
+
+module_init(tpd_driver_init);
+module_exit(tpd_driver_exit);

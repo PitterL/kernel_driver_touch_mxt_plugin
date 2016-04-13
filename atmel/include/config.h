@@ -12,8 +12,6 @@
 #if defined(CONFIG_MXT_PLUGIN_SUPPORT)
 #define CONFIG_MXT_IRQ_WORKQUEUE
 #endif
-//#define CONFIG_MXT_I2C_DMA
-//#define CONFIG_MXT_I2C_EXTFLAG
 
 //#undef CONFIG_OF
 #if defined(CONFIG_FB)

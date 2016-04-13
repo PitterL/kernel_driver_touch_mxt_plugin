@@ -3,6 +3,8 @@
 
 #include <linux/types.h>
 
+#define CONFIG_MXT_I2C_DMA
+#define CONFIG_MXT_I2C_EXTFLAG
 #define MXT_I2C_DMA_ADDR_FLAG	I2C_RS_FLAG | I2C_ENEXT_FLAG | I2C_DMA_FLAG
 
 #define MXT_EVENT_IRQ 1
