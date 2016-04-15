@@ -2374,6 +2374,36 @@ static irqreturn_t mxt_interrupt(int irq, void *dev_id)
 	return ret;
 }
 
+#if defined(CONFIG_MXT_FW_UPDATE_EXAMPLE_BY_KTHREAD)
+static ssize_t mxt_update_cfg_store(struct device *dev,
+		struct device_attribute *attr,
+		const char *buf, size_t count);
+
+static ssize_t mxt_update_fw_store(struct device *dev,
+					struct device_attribute *attr,
+					const char *buf, size_t count);
+
+static int mxt_process_fw_upate_example_thread(void *dev_id)
+{
+	struct mxt_data *data = dev_id;
+	struct device *dev = &data->client->dev;
+	unsigned int ms_wait = 3000;
+
+	const char *fw_name = "A4_2F_1.5_AA.fw";
+	const char *cfg_name = "A4_2F.raw";
+
+	msleep(ms_wait);
+
+	dev_info(dev, "mxt_process_fw_upate_example_thread: fw %s\n", fw_name);
+	mxt_update_fw_store(dev, NULL, fw_name, strlen(fw_name));
+
+	dev_info(dev, "mxt_process_fw_upate_example_thread: cfg %s \n", cfg_name);
+	mxt_update_cfg_store(dev, NULL, cfg_name, strlen(cfg_name));
+
+	return 0;
+}
+#endif
+
 #if defined(CONFIG_MXT_IRQ_WORKQUEUE)
 
 void mxt_active_proc_thread(void *dev_id, unsigned int event)
@@ -2397,7 +2427,8 @@ static irqreturn_t mxt_interrupt_workqueue_handler(int irq, void *dev_id)
 	struct mxt_data *data = (struct mxt_data *)dev_id;
 	struct device *dev = &data->client->dev;
 
-	dev_dbg(dev, "irq workqueue\n");
+	if (!dev_id)
+		dev_warn(dev, "irq workqueue null\n");
 
 	device_disable_irq_nosync(dev, __func__);
 	if (data) {
@@ -2419,8 +2450,12 @@ static int mxt_process_message_thread(void *dev_id)
 	irqreturn_t iret;
 
 	/*
-		you could plug update fw/cfg code here for skip selinux check by shell
+		you could create a new thread to update fw/cfg here for skip selinux check by shell
 	*/
+#if defined(CONFIG_MXT_FW_UPDATE_EXAMPLE_BY_KTHREAD)
+	kthread_run(mxt_process_fw_upate_example_thread, data,
+						"Atmel_mxt_ts_fw_update_eg");
+#endif
 	
 	while (!kthread_should_stop()) {
 

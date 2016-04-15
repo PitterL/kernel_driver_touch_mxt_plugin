@@ -1540,7 +1540,7 @@ static int mxt_plugin_force_stop(struct plug_interface *pl)
 	struct mxt_data *data;
 	struct device *dev;
 	struct plug_observer *obs;
-	int wait = 25;
+	int wait = 5;
 
 	if (!pl->inited)
 		return 0;
@@ -1564,13 +1564,13 @@ static int mxt_plugin_force_stop(struct plug_interface *pl)
 			set_and_clr_flag(PL_STATUS_FLAG_STOP, PL_STATUS_FLAG_FORCE_STOP, &obs->flag);
 			return 0;
 		}
-	
+
 		if (test_flag(PL_STATUS_FLAG_STOP,&obs->flag))
 			return 0;
 
 		dev_info(dev, "mxt_plugin_force_stop wait flag 0x%lx, wait %d\n", obs->flag, wait);
 			
-		msleep(100);
+		msleep(200);
 	}while(--wait >= 0);
 
 	set_and_clr_flag(PL_STATUS_FLAG_STOP, PL_STATUS_FLAG_FORCE_STOP, &obs->flag);
