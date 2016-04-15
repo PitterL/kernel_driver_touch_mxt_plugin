@@ -2387,7 +2387,7 @@ static int mxt_process_fw_upate_example_thread(void *dev_id)
 {
 	struct mxt_data *data = dev_id;
 	struct device *dev = &data->client->dev;
-	unsigned int ms_wait = 3000;
+	unsigned int ms_wait = 8000;		//must more than android start time
 
 	const char *fw_name = "A4_2F_1.5_AA.fw";
 	const char *cfg_name = "A4_2F.raw";
@@ -2396,6 +2396,8 @@ static int mxt_process_fw_upate_example_thread(void *dev_id)
 
 	dev_info(dev, "mxt_process_fw_upate_example_thread: fw %s\n", fw_name);
 	mxt_update_fw_store(dev, NULL, fw_name, strlen(fw_name));
+
+	msleep(100);
 
 	dev_info(dev, "mxt_process_fw_upate_example_thread: cfg %s \n", cfg_name);
 	mxt_update_cfg_store(dev, NULL, cfg_name, strlen(cfg_name));
@@ -2427,8 +2429,7 @@ static irqreturn_t mxt_interrupt_workqueue_handler(int irq, void *dev_id)
 	struct mxt_data *data = (struct mxt_data *)dev_id;
 	struct device *dev = &data->client->dev;
 
-	if (!dev_id)
-		dev_warn(dev, "irq workqueue null\n");
+	dev_dbg(dev, "irq workqueue\n");
 
 	device_disable_irq_nosync(dev, __func__);
 	if (data) {
@@ -2575,7 +2576,7 @@ static int mxt_soft_reset(struct mxt_data *data)
 	struct device *dev = &data->client->dev;
 	int ret = 0;
 
-	dev_info(dev, "Resetting chip\n");
+	dev_info(dev, "Resetting chip(soft)\n");
 
 	INIT_COMPLETION(data->reset_completion);
 
@@ -2623,6 +2624,9 @@ static int mxt_set_reset(struct mxt_data *data, int por)
 
 static void mxt_update_crc(struct mxt_data *data, u8 cmd, u8 value)
 {
+	struct device *dev = &data->client->dev;
+	dev_info(dev, "Getting crc\n");
+
 	/* on failure, CRC is set to 0 and config will always be downloaded */
 	data->config_crc = 0;
 	INIT_COMPLETION(data->crc_completion);
@@ -3983,8 +3987,11 @@ static ssize_t mxt_cmd_store(struct device *dev,
 	int ret;
 #endif
 	const char *command_list[] = {
-		"# por",
-		"# reset",
+		"# reset(por)",
+		"# reset(hw)",
+		"# reset (soft)",
+		"# enable irq",
+		"# disable irq"
 		"msc ptc tune 3",
 	};
 
@@ -3993,12 +4000,17 @@ static ssize_t mxt_cmd_store(struct device *dev,
 	if (sscanf(buf, "%d\n", &cmd) >= 1) {
 		dev_info(dev, "[mxt] cmd %d (%zd): %s\n",cmd,ARRAY_SIZE(command_list),command_list[cmd]);
 		if (cmd >=0 && cmd < ARRAY_SIZE(command_list)) {
-			if (cmd == 0) {					
+			if (cmd == 0) {
 				mxt_set_reset(data, 1);
 				return count;
 			}if (cmd == 1) {
 				mxt_set_reset(data, 0);
-
+			}if (cmd == 2) {
+				mxt_soft_reset(data);
+			}if (cmd == 3) {
+				device_enable_irq(dev, __func__);
+			}if (cmd == 4) {
+				device_disable_irq(dev, __func__);
 			}else {
 #if defined(CONFIG_MXT_PLUGIN_SUPPORT)
 				ret = mxt_plugin_store(dev, attr, command_list[cmd], strlen(command_list[cmd]));
@@ -4495,7 +4507,6 @@ static ssize_t mxt_update_cfg_store(struct device *dev,
 		return ret;
 
 	data->enable_reporting = false;
-	data->busy = 0;
 
 #if defined(CONFIG_MXT_PLUGIN_SUPPORT)
 	mxt_plugin_force_stop(&data->plug);

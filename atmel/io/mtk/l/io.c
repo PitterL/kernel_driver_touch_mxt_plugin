@@ -201,6 +201,8 @@ int device_hw_reset(struct device *dev)
 	udelay(1500);
 	mt_set_gpio_out(pdata->gpio_reset, GPIO_OUT_ONE);
 
+	device_wait_irq_state(dev, 0, 100);
+
 	return 0;
 }
 
