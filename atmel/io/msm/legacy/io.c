@@ -37,6 +37,9 @@
 #include <linux/i2c.h>
 
 #include "io/io.h"
+
+#define MXT_HW_RESET_TIME		200	/* msec */
+
 static void *mxt_g_data;
 static struct device *t_dev;
 
@@ -124,7 +127,7 @@ void device_regulator_enable(struct device *dev)
 
 	msleep(20);
 	
-	device_wait_irq_state(dev, 0, 100);
+	device_wait_irq_state(dev, 0, MXT_HW_RESET_TIME);
 }
 
 void device_regulator_disable(struct device *dev)
@@ -348,7 +351,7 @@ int device_hw_reset(struct device *dev)
 	udelay(1500);
 	gpio_set_value(pdata->gpio_reset, 1);
 
-	device_wait_irq_state(dev, 0, 100);
+	device_wait_irq_state(dev, 0, MXT_HW_RESET_TIME);
 
 	return 0;
 
@@ -365,7 +368,7 @@ int device_por_reset(struct device *dev)
 	msleep(100);
 	device_regulator_enable(dev);
 
-	device_wait_irq_state(dev, 0, 100);
+	device_wait_irq_state(dev, 0, MXT_HW_RESET_TIME);
 
 	return 0;
 }

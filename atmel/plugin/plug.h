@@ -703,6 +703,7 @@ struct mxt_config {
 #define PL_STATUS_FLAG_PLUG_PI					(1<<22)
 #define PL_STATUS_FLAG_PLUG_CLIP					(1<<23)
 #define PL_STATUS_FLAG_PLUG_WDG					(1<<24)
+#define PL_STATUS_FLAG_PLUG_AC					(1<<25)
 #define PL_STATUS_FLAG_PAUSE						(1<<27)
 
 #define PL_STATUS_FLAG_NEED_RESET				(1<<28)
@@ -764,6 +765,7 @@ struct plugin_ac{
 	void (*start)(struct plugin_ac *p, bool resume);
 	void (*stop)(struct plugin_ac *p);
 	void (*hook_t6)(struct plugin_ac *p, u8 status);
+	int (*hook_t100)(struct plugin_ac *p, int id, int x, int y, struct ext_info *in);
 	void (*hook_t72)(struct plugin_ac *p, u8* msg);
 	void (*pre_process)(struct plugin_ac *p, int pl_flag);
 	long (*post_process)(struct plugin_ac *p, unsigned long pl_flag);

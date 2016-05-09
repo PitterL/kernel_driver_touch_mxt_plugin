@@ -989,9 +989,14 @@ static void mxt_plugin_pre_process(struct plug_interface *pl, bool in_boot)
 			clear_flag(PL_STATUS_FLAG_PHONE_ON,&obs->flag);
 		}
 
+		if (test_flag(PL_STATUS_FLAG_PLUG_AC,&obs->flag)) {
+			if (pl->ac->pre_process) {
+				if (pl->ac->pre_process)
+					pl->ac->pre_process(pl->ac, pl->observer.flag);
+			}
+		}
+
 		if (test_flag(PL_STATUS_FLAG_PLUG_CAL,&obs->flag)) {
-			if (pl->ac->pre_process)
-				pl->ac->pre_process(pl->ac, pl->observer.flag);
 			if (pl->cal->pre_process)
 				pl->cal->pre_process(pl->cal, pl->observer.flag);
 		}
@@ -1036,11 +1041,15 @@ static long mxt_plugin_post_process(struct plug_interface *pl, bool in_boot)
 	
 	interval0 = interval1 = MAX_SCHEDULE_TIMEOUT;
 	if (!in_boot) {
-		if (test_flag(PL_STATUS_FLAG_PLUG_CAL,&obs->flag)) {
+
+		if (test_flag(PL_STATUS_FLAG_PLUG_AC,&obs->flag)) {
 			if (pl->ac->post_process) {
 				interval1 = pl->ac->post_process(pl->ac, pl->observer.flag);
 				interval0 = min_t(unsigned long,interval0,interval1);
 			}
+		}
+
+		if (test_flag(PL_STATUS_FLAG_PLUG_CAL,&obs->flag)) {
 			if (pl->cal->post_process) {
 				interval1 = pl->cal->post_process(pl->cal, pl->observer.flag);
 				interval0 = min_t(unsigned long,interval0,interval1);
@@ -1207,6 +1216,9 @@ static void mxt_plugin_hook_reset_slots(struct plug_interface *pl)
 	if (test_flag(PL_STATUS_FLAG_STOP,&obs->flag))
 		return;
 
+	if (pl->ac->hook_reset_slots)
+		pl->ac->hook_reset_slots(pl->ac);
+
 	if (pl->cal->hook_reset_slots)
 		pl->cal->hook_reset_slots(pl->cal);
 
@@ -1224,6 +1236,9 @@ static int mxt_plugin_hook_t100(struct plug_interface *pl, int id, int x, int y,
 
 	if (test_flag(PL_STATUS_FLAG_STOP,&obs->flag))
 		return ret;
+
+	if (pl->ac->hook_t100)
+		pl->ac->hook_t100(pl->ac, id, x, y, in);
 
 	if (pl->cal->hook_t100)
 		pl->cal->hook_t100(pl->cal, id, x, y, in);
@@ -1287,7 +1302,7 @@ static int mxt_plugin_hook_set_t7(struct plug_interface *pl, bool sleep)
 		}while(--wait >= 0);
 
 		if (test_flag(PL_STATUS_FLAG_NOSUSPEND,&obs->flag))
-			return -EACCES;
+			return -ETIMEDOUT;
 	}
 
 	return 0;
@@ -1470,11 +1485,11 @@ static int mxt_plugin_start(struct plug_interface *pl, bool resume)
 	else
 		clear_flag(PL_STATUS_FLAG_PAUSE, &obs->flag);
 
-	if (pl->cal->start)
-		pl->cal->start(pl->cal,resume);
-
 	if (pl->ac->start)
 		pl->ac->start(pl->ac,resume);
+
+	if (pl->cal->start)
+		pl->cal->start(pl->cal,resume);
 
 	if (pl->pi->start)
 		pl->pi->start(pl->pi,resume);

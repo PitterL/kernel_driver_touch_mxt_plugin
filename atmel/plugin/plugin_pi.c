@@ -1359,12 +1359,15 @@ int plugin_proci_pi_gesture_store(struct plugin_proci *p, const char *buf, size_
 	offset = 0;
 	do {
 		len = sscanf(buf + offset, "%16s %02x;%n", name, &val, &ofs);
+		offset += ofs;
 		if (len > 0)
 			dev_info(dev, "%s=%x; len %d offset %d\n",name,val,len,offset);
+
 		if (len != 2) {
 			ret = EINVAL;
 			break;
 		}
+
 		len = strlen(name);
 		op = 0;
 		if (val & (1<<0))
@@ -1378,10 +1381,10 @@ int plugin_proci_pi_gesture_store(struct plugin_proci *p, const char *buf, size_
 			for (i = 0; i < ARRAY_SIZE(gesture_element_array); i++) {
 				elem = &gesture_element_array[i];
 				if (strncmp(name,elem->name,MAX_GES_NAME_LEN) == 0) {
-					dev_err(dev, "set element %s %lx\n",name,op);
+					dev_info(dev, "set element %s %lx\n",name,op);
 					if (set_data_by_element(head,elem,op) != 0) {
 						dev_err(dev, "Failed process element %s %x\n",buf,val);
-						ret = EINVAL;
+						ret = -EINVAL;
 					}
 					if (test_flag(BIT_MASK(GES_SWITCH), &elem->tag))
 						check_switch = true;
@@ -1406,7 +1409,6 @@ int plugin_proci_pi_gesture_store(struct plugin_proci *p, const char *buf, size_
 				}
 			}
 		}
-		offset += ofs;
 	}while(offset + 1 < count);
 
 	dev_info(dev, "check_switch %d\n",check_switch);
@@ -1423,9 +1425,9 @@ int plugin_proci_pi_gesture_store(struct plugin_proci *p, const char *buf, size_
 			ret = -EINVAL;
 		}
 	}
-	
+
 	clear_flag(PI_FLAG_GESTURE, &obs->flag);
-	
+
 	if(ret || offset < count)
 		return -EINVAL;
 
