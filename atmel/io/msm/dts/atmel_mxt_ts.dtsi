@@ -11,7 +11,7 @@
 		pinctrl-names = "default", "active";
 		pinctrl-0 = <&touch_irq_default &touch_reset_default>;
 		pinctrl-1 = <&touch_irq_active &touch_reset_active>;
-		common-vdd-supply = <0>;
+		common-vdd-supply = <1>;
 		suspend-power-off = <0>;
 
 		keyevent_modes {

@@ -439,6 +439,9 @@ struct mxt_data {
 	
 	struct mutex access_mutex;
 
+#if defined(CONFIG_MXT_FW_UPDATE_EXAMPLE_BY_KTHREAD)
+	struct task_struct *tsk_handle_update;
+#endif
 #if defined(CONFIG_MXT_IRQ_WORKQUEUE)
 	struct task_struct *tsk_handle_msg;
 	wait_queue_head_t wait;
@@ -665,6 +668,9 @@ static ssize_t mxt_debug_msg_read(struct file *filp, struct kobject *kobj,
 	struct mxt_data *data = dev_get_drvdata(dev);
 	int count;
 	size_t bytes_read;
+
+	if (!data)
+		return -EIO;
 
 	if (!data->debug_msg_data) {
 		dev_err(dev, "No buffer!\n");
@@ -2385,23 +2391,37 @@ static ssize_t mxt_update_fw_store(struct device *dev,
 
 static int mxt_process_fw_upate_example_thread(void *dev_id)
 {
-	struct mxt_data *data = dev_id;
-	struct device *dev = &data->client->dev;
-	unsigned int ms_wait = 8000;		//must more than android start time
+	struct device *dev = dev_id;
+	struct mxt_data *data;
+	int s_wait = 8;		//seconds, must more than android start time
 
 	const char *fw_name = "A4_2F_1.5_AA.fw";
 	const char *cfg_name = "A4_2F.raw";
 
-	msleep(ms_wait);
+	while(s_wait-- > 0) {
+		msleep(1000);
+
+		dev_info(dev, "s_wait %d\n", s_wait);
+
+		if (kthread_should_stop())
+			return -ESRCH;
+	}
+
+	data = dev_get_drvdata(dev);
+	if (!data)
+		return -EIO;
 
 	dev_info(dev, "mxt_process_fw_upate_example_thread: fw %s\n", fw_name);
 	mxt_update_fw_store(dev, NULL, fw_name, strlen(fw_name));
-
+	
 	msleep(100);
+	if (kthread_should_stop())
+		return -ESRCH;
 
 	dev_info(dev, "mxt_process_fw_upate_example_thread: cfg %s \n", cfg_name);
 	mxt_update_cfg_store(dev, NULL, cfg_name, strlen(cfg_name));
 
+	data->tsk_handle_update =NULL;
 	return 0;
 }
 #endif
@@ -2443,18 +2463,24 @@ static irqreturn_t mxt_interrupt_workqueue_handler(int irq, void *dev_id)
 //warning: don't put any write/read code in this function
 static int mxt_process_message_thread(void *dev_id)
 {
-	struct mxt_data *data = dev_id;
-	struct device *dev = &data->client->dev;
-	struct mxt_platform_data *pdata = data->pdata;
+	struct device *dev = dev_id;
+	struct mxt_data *data;
+	struct mxt_platform_data *pdata;
 	long interval = MAX_SCHEDULE_TIMEOUT;
 	int post = false;
 	irqreturn_t iret;
+
+	data = dev_get_drvdata(dev);
+	if (!data)
+		return -EIO;
+
+	pdata = data->pdata;
 
 	/*
 		you could create a new thread to update fw/cfg here for skip selinux check by shell
 	*/
 #if defined(CONFIG_MXT_FW_UPDATE_EXAMPLE_BY_KTHREAD)
-	kthread_run(mxt_process_fw_upate_example_thread, data,
+	data->tsk_handle_update = kthread_run(mxt_process_fw_upate_example_thread, dev,
 						"Atmel_mxt_ts_fw_update_eg");
 #endif
 	
@@ -2514,6 +2540,15 @@ static int mxt_process_message_thread(void *dev_id)
 		}
 #endif
 	}
+
+#if defined(CONFIG_MXT_FW_UPDATE_EXAMPLE_BY_KTHREAD)
+	if (data->tsk_handle_update) {
+		kthread_stop(data->tsk_handle_update);
+		data->tsk_handle_update = NULL;
+	}
+#endif
+
+	data->tsk_handle_msg = NULL;
 
 	return 0;
 }
@@ -3034,6 +3069,7 @@ static int mxt_set_smartscan_sync_cfg(struct mxt_data *data, u8 sleep)
 
 static int mxt_set_t7_power_cfg(struct mxt_data *data, u8 sleep)
 {
+	struct mxt_platform_data *pdata = data->pdata;
 	struct device *dev = &data->client->dev;
 	int error;
 	struct t7_config *new_config;
@@ -3046,7 +3082,11 @@ static int mxt_set_t7_power_cfg(struct mxt_data *data, u8 sleep)
 		new_config = &data->t7_cfg;
 
 #if defined(CONFIG_MXT_PLUGIN_SUPPORT)
-	mxt_plugin_hook_set_t7(&data->plug, sleep == MXT_POWER_CFG_DEEPSLEEP);
+	error = mxt_plugin_hook_set_t7(&data->plug, sleep == MXT_POWER_CFG_DEEPSLEEP);
+	if (error) {	//T6 have flags not clear
+		WARN_ON(atomic_read(&pdata->depth) < 0);
+		//device_enable_irq(dev, __func__);
+	}
 #endif
 	error = __mxt_write_reg(data->client, data->T7_address,
 			sizeof(data->t7_cfg),
@@ -3066,21 +3106,24 @@ static int mxt_set_t7_power_cfg(struct mxt_data *data, u8 sleep)
 static int mxt_init_t7_power_cfg(struct mxt_data *data)
 {
 	struct device *dev = &data->client->dev;
+	struct t7_config cfg;
 	int error;
 
 	error = __mxt_read_reg(data->client, data->T7_address,
-				sizeof(data->t7_cfg), &data->t7_cfg);
+				sizeof(cfg), &cfg);
 	if (error) {
 		dev_info(dev, "Failed read T7 power config, set free run\n");
 		data->t7_cfg.active = data->t7_cfg.idle = 255;
 		return error;
 	}
 
-	if (data->t7_cfg.active == 0 || data->t7_cfg.idle == 0)
-			dev_err(dev, "T7 cfg zero after reset\n");
-	 else
+	if (cfg.active == 0 || cfg.idle == 0)
+		dev_err(dev, "T7 cfg zero after reset\n");
+	 else {
 		dev_info(dev, "Initialised power cfg: ACTV %d, IDLE %d\n",
-				data->t7_cfg.active, data->t7_cfg.idle);
+				cfg.active, cfg.idle);
+		memcpy(&data->t7_cfg, &cfg, sizeof(cfg));
+	}
 
 	return 0;
 }
@@ -3837,6 +3880,10 @@ static ssize_t mxt_t19_gpio_show(struct device *dev,
 					struct device_attribute *attr, char *buf)
 {
 	struct mxt_data *data = dev_get_drvdata(dev);
+
+	if (!data)
+		return -EIO;
+
 	return scnprintf(buf, PAGE_SIZE, "%02x (GPIO 0x%02x)\n",
 			 data->t19_msg[0],
 			 (data->t19_msg[0]>>2) & 0xf);
@@ -3851,6 +3898,9 @@ static ssize_t mxt_t19_gpio_store(struct device *dev,
 	char suffix[16];
 	int ret;
 #endif
+
+	if (!data)
+		return -EIO;
 
 	if (sscanf(buf, "%hhd", &cmd) == 1) {
 		if (cmd == 0) {
@@ -3885,7 +3935,12 @@ static ssize_t mxt_irq_depth_show(struct device *dev,
 					struct device_attribute *attr, char *buf)
 {
 	struct mxt_data *data = dev_get_drvdata(dev);
-	struct mxt_platform_data *pdata = data->pdata;
+	struct mxt_platform_data *pdata;
+
+	if (!data)
+		return -EIO;
+
+	pdata = data->pdata;
 
 	return scnprintf(buf, PAGE_SIZE, "depth %d\n",
 				 atomic_read(&pdata->depth));
@@ -3895,8 +3950,13 @@ static ssize_t mxt_irq_depth_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct mxt_data *data = dev_get_drvdata(dev);
-	struct mxt_platform_data *pdata = data->pdata;
+	struct mxt_platform_data *pdata;
 	int cmd;
+
+	if (!data)
+		return -EIO;
+
+	pdata = data->pdata;
 
 	if (sscanf(buf, "%d", &cmd) == 1) {
 		atomic_set(&pdata->depth,cmd);
@@ -3945,6 +4005,9 @@ static ssize_t mxt_t25_selftest_show(struct device *dev,
 	struct mxt_data *data = dev_get_drvdata(dev);
 	ssize_t offset = 0;
 
+	if (!data)
+		return -EIO;
+
 	if (data->t25_msg[0] == 0xFE)
 		offset += scnprintf(buf, PAGE_SIZE, "PASS\n");
 	else
@@ -3966,6 +4029,9 @@ static ssize_t mxt_t25_selftest_store(struct device *dev,
 	struct mxt_data *data = dev_get_drvdata(dev);
 	u32 cmd;
 
+	if (!data)
+		return -EIO;
+
 	if (sscanf(buf, "%x", &cmd) == 1) {
 		if (mxt_t25_command(data,(u8)cmd,1) == 0)
 			return count;
@@ -3983,9 +4049,7 @@ static ssize_t mxt_cmd_store(struct device *dev,
 {
 	struct mxt_data *data = dev_get_drvdata(dev);
 	u32 cmd;
-#if defined(CONFIG_MXT_PLUGIN_SUPPORT)
-	int ret;
-#endif
+
 	const char *command_list[] = {
 		"# reset(por)",
 		"# reset(hw)",
@@ -3995,6 +4059,9 @@ static ssize_t mxt_cmd_store(struct device *dev,
 		"msc ptc tune 3",
 	};
 
+	if (!data)
+		return -EIO;
+
 	dev_info(dev, "[mxt]%s\n",buf);
 
 	if (sscanf(buf, "%d\n", &cmd) >= 1) {
@@ -4002,7 +4069,6 @@ static ssize_t mxt_cmd_store(struct device *dev,
 		if (cmd >=0 && cmd < ARRAY_SIZE(command_list)) {
 			if (cmd == 0) {
 				mxt_set_reset(data, 1);
-				return count;
 			}if (cmd == 1) {
 				mxt_set_reset(data, 0);
 			}if (cmd == 2) {
@@ -4013,12 +4079,10 @@ static ssize_t mxt_cmd_store(struct device *dev,
 				device_disable_irq(dev, __func__);
 			}else {
 #if defined(CONFIG_MXT_PLUGIN_SUPPORT)
-				ret = mxt_plugin_store(dev, attr, command_list[cmd], strlen(command_list[cmd]));
-				if (ret > 0)
-					return count;
-				return ret;
+				mxt_plugin_store(dev, attr, command_list[cmd], strlen(command_list[cmd]));
 #endif
 			}
+			return count;
 		}
 		return -EINVAL;
 	} else {
@@ -4034,6 +4098,9 @@ static ssize_t mxt_fw_version_show(struct device *dev,
 {
 	struct mxt_data *data = dev_get_drvdata(dev);
 
+	if (!data)
+		return -EIO;
+
 	if (!data->info)
 		return 0;
 		
@@ -4047,6 +4114,9 @@ static ssize_t mxt_hw_version_show(struct device *dev,
 					struct device_attribute *attr, char *buf)
 {
 	struct mxt_data *data = dev_get_drvdata(dev);
+
+	if (!data)
+		return -EIO;
 
 	if (!data->info)
 		return 0;
@@ -4082,6 +4152,9 @@ static ssize_t mxt_object_show(struct device *dev,
 	int i, j;
 	int error;
 	u8 *obuf;
+
+	if (!data)
+		return -EIO;
 
 	/* Pre-allocate buffer large enough to hold max sized object. */
 	obuf = kmalloc(256, GFP_KERNEL);
@@ -4137,13 +4210,18 @@ static int mxt_check_firmware_format(struct device *dev,
 static int mxt_load_fw(struct device *dev)
 {
 	struct mxt_data *data = dev_get_drvdata(dev);
-	struct mxt_platform_data *pdata = data->pdata;
+	struct mxt_platform_data *pdata;
 	const struct firmware *fw = NULL;
 	unsigned int frame_size;
 	unsigned int pos = 0;
 	unsigned int retry = 0;
 	unsigned int frame = 0;
 	int ret;
+
+	if (!data)
+		return -EIO;
+
+	pdata = data->pdata;
 
 	if (!data->fw_name)
 		return -EEXIST;
@@ -4293,6 +4371,10 @@ static int mxt_update_file_name(struct device *dev, char **file_name,
 	char *sc;
  	int ret; 
 #endif
+
+	if (!data)
+		return -EIO;
+
 	/* Simple sanity check */
 	if (count > 64) {
 		dev_warn(dev, "File name too long\n");
@@ -4444,6 +4526,9 @@ static ssize_t mxt_update_fw_store(struct device *dev,
 	struct mxt_data *data = dev_get_drvdata(dev);
 	int error;
 
+	if (!data)
+		return -EIO;
+
 	dev_info(dev, "mxt_update_fw_store\n");
 
 	error = mxt_update_file_name(dev, &data->fw_name, buf, count, /*false*/data->alt_chip | ALT_CHIP_BIT_FW);
@@ -4487,8 +4572,12 @@ static ssize_t mxt_update_cfg_store(struct device *dev,
 		const char *buf, size_t count)
 {
 	struct mxt_data *data = dev_get_drvdata(dev);
-	struct mxt_platform_data *pdata = data->pdata;
+	struct mxt_platform_data *pdata;
 	int ret;
+
+	if (!data)
+		return -EIO;
+	pdata = data->pdata;
 
 	dev_info(dev, "mxt_update_cfg_store\n");
 
@@ -4534,6 +4623,9 @@ static ssize_t mxt_debug_enable_show(struct device *dev,
 	struct mxt_data *data = dev_get_drvdata(dev);
 	char c;
 
+	if (!data)
+		return -EIO;
+
 	c = data->debug_enabled ? '1' : '0';
 	return scnprintf(buf, PAGE_SIZE, "%c\n", c);
 }
@@ -4549,6 +4641,9 @@ static ssize_t mxt_debug_v2_enable_show(struct device *dev,
 {
 	struct mxt_data *data = dev_get_drvdata(dev);
 
+	if (!data)
+		return -EIO;
+
 	if (data->debug_msg_data)
 		return sprintf(buf, "%d\n", data->debug_msg_count);
 	else
@@ -4562,6 +4657,9 @@ static ssize_t mxt_debug_v2_enable_store(struct device *dev,
 {
 	struct mxt_data *data = dev_get_drvdata(dev);
 	int i;
+
+	if (!data)
+		return -EIO;
 
 	if (sscanf(buf, "%u", &i) == 1 && i < 2) {
 		if (i == 1)
@@ -4582,6 +4680,9 @@ static ssize_t mxt_debug_enable_store(struct device *dev,
 	struct mxt_data *data = dev_get_drvdata(dev);
 	int i;
 
+	if (!data)
+		return -EIO;
+
 	if (sscanf(buf, "%u", &i) == 1 && i < 2) {
 		data->debug_enabled = (i == 1);
 
@@ -4599,6 +4700,9 @@ static ssize_t mxt_bootloader_show(struct device *dev,
 	struct mxt_data *data = dev_get_drvdata(dev);
 	char c;
 
+	if (!data)
+		return -EIO;
+
 	c = data->in_bootloader ? '1' : '0';
 	return scnprintf(buf, PAGE_SIZE, "%c\n", c);
 }
@@ -4608,6 +4712,9 @@ static ssize_t mxt_bootloader_store(struct device *dev,
 {
 	struct mxt_data *data = dev_get_drvdata(dev);
 	int i;
+
+	if (!data)
+		return -EIO;
 
 	if (sscanf(buf, "%u", &i) == 1 && i < 2) {
 		data->in_bootloader = (i == 1);
@@ -4642,6 +4749,9 @@ static ssize_t mxt_mem_access_read(struct file *filp, struct kobject *kobj,
 	struct mxt_data *data = dev_get_drvdata(dev);
 	int ret = 0;
 
+	if (!data)
+		return -EIO;
+
 	ret = mxt_check_mem_access_params(data, off, &count, MXT_MAX_BLOCK_READ);
 	if (ret < 0)
 		return ret;
@@ -4663,6 +4773,9 @@ static ssize_t mxt_mem_access_write(struct file *filp, struct kobject *kobj,
 	struct device *dev = container_of(kobj, struct device, kobj);
 	struct mxt_data *data = dev_get_drvdata(dev);
 	int ret = 0;
+
+	if (!data)
+		return -EIO;
 
 	ret = mxt_check_mem_access_params(data, off, &count, MXT_MAX_BLOCK_WRITE);
 	if (ret < 0)
@@ -5010,7 +5123,7 @@ int mxt_probe(struct i2c_client *client,
 
 #if defined(CONFIG_MXT_IRQ_WORKQUEUE)
 	init_waitqueue_head(&data->wait);
-	data->tsk_handle_msg = kthread_run(mxt_process_message_thread, data,
+	data->tsk_handle_msg = kthread_run(mxt_process_message_thread, dev,
 						"Atmel_mxt_ts");
 	if (!data->tsk_handle_msg) {
 		dev_err(dev, "Error %d Can't create handle message thread\n",
@@ -5104,6 +5217,7 @@ err_free_pdata:
 err_free_mem:
 #endif
 	kfree(data);
+	i2c_set_clientdata(client, NULL);
 	return error;
 }
 
@@ -5150,6 +5264,7 @@ int mxt_remove(struct i2c_client *client)
 	mxt_free_pdata(data);
 
 	kfree(data);
+	i2c_set_clientdata(client, NULL);
 
 	return 0;
 }
