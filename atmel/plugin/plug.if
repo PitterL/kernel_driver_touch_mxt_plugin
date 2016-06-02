@@ -1805,6 +1805,8 @@ static int mxt_plugin_init(struct mxt_data *data)
 		pl->ac->dev = (void *)pl;
 		pl->ac->dcfg = &pl->init_cfg;
 		pl->ac->set_and_clr_flag = plug_set_and_clr_flag;
+		pl->ac->set_obj_cfg = mxt_set_obj_cfg;
+		pl->ac->get_obj_cfg = mxt_get_obj_cfg;
 		pl->ac->set_t6_cal= mxt_set_t6_cal;
 		if (pl->ac->init(pl->ac) != 0) {
 			dev_err(dev, "init ac plugin failed, disable this plugin\n");
@@ -2099,6 +2101,9 @@ static ssize_t mxt_plugin_tag_show(struct device *dev,
 				pl->init_cfg.t38.data[1],
 				pl->init_cfg.t38.data[2]);
 
+		count = scnprintf(buf + count, PAGE_SIZE - count, "CRC: 0x%X\n",
+				data->config_crc);
+
 		count += snprintf(buf + count, PAGE_SIZE - count, "FW: %02X_%02X_%u.%u_%02X\n",
 				data->info->family_id,
 				data->info->variant_id,
@@ -2172,7 +2177,7 @@ ssize_t plugin_functon_op(struct plug_interface *pl,char *buf, size_t count, uns
 
 	op &= PL_FUNCTION_FLAG_MASK;
 
-	if (show) {   
+	if (show) {
 		c = test_flag(op, &obs->flag) ? '1' : '0';
 		return scnprintf(buf, PAGE_SIZE, "%c\n", c);
 	}else{
@@ -2181,10 +2186,6 @@ ssize_t plugin_functon_op(struct plug_interface *pl,char *buf, size_t count, uns
 				set_flag(op, &obs->flag);
 			}else{
 				clear_flag(op, &obs->flag);
-				if (op == PL_FUNCTION_FLAG_GLOVE) {
-					//mxt_soft_reset((struct mxt_data *)pl->dev);
-					mxt_t6_command((struct mxt_data *)pl->dev, MXT_COMMAND_CALIBRATE, 1, false);
-				}
 			}
 			return count;
 		} else {
@@ -2396,4 +2397,33 @@ static ssize_t mxt_plugin_clip_tag_show(struct device *dev,
 
 #endif
 
+#if defined(CONFIG_MXT_PLIGIN_AC)
+static ssize_t mxt_plugin_ac_extern_event_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct mxt_data *data = dev_get_drvdata(dev);
+	struct plug_interface *pl = &data->plug;
+
+	if (!pl->inited)
+		return -ENODEV;
+
+	return plugin_ac_extern_event_show(pl->ac, buf, PAGE_SIZE);
+}
+
+static ssize_t mxt_plugin_ac_extern_event_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct mxt_data *data = dev_get_drvdata(dev);
+	struct plug_interface *pl = &data->plug;
+	int ret;
+
+	if (!pl->inited)
+		return -ENODEV;
+
+	ret = plugin_ac_extern_event_store(pl->ac, buf, count);
+	if (pl->active_thread)
+		pl->active_thread(pl->dev,MXT_EVENT_EXTERN);
+	return ret;
+}
+#endif
 

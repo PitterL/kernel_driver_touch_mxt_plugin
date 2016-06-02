@@ -18,6 +18,9 @@ enum{
 int plugin_interface_ac_init(struct plugin_ac *p);
 void plugin_interface_ac_deinit(struct plugin_ac *p);
 
+ssize_t plugin_ac_extern_event_show(struct plugin_ac *p, char *buf, size_t count);
+int plugin_ac_extern_event_store(struct plugin_ac *p, const char *buf, size_t count);
+
 #endif
 
 

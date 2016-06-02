@@ -60,7 +60,7 @@ fixed some bugs
 //more than 16 is high mask
 
 #define PI_FLAG_MASK_LOW			P_FLAG_EV_DONE_MASK
-#define PI_FLAG_MASK_NORMAL			(0xff0)
+#define PI_FLAG_MASK_NORMAL			(0x00f00)
 #define PI_FLAG_MASK_FUNC			(0xff000)
 #define PI_FLAG_MASK				(-1)
 
@@ -150,7 +150,7 @@ static void plugin_proci_pi_hook_t6(struct plugin_proci *p, u8 status)
 	struct device *dev = dcfg->dev;
 	struct pi_observer *obs = p->obs;
 
-	plugin_p_hook_t6(status, &obs->flag,PI_FLAG_MASK_NORMAL);
+	plugin_p_hook_t6(status, &obs->flag, PI_FLAG_MASK_FUNC | PI_FLAG_MASK_NORMAL);
 
 	dev_info2(dev, "mxt pi flag=0x%lx %x\n",
 		 obs->flag, status);
@@ -765,7 +765,7 @@ static int pi_handle_request(struct plugin_proci *p,const struct reg_config *rcf
 
 	for (i = 0; i < num_reg_cfg; i++) {
 
-		if (test_flag(PI_FLAG_RESET|PI_FLAG_RESETING,&obs->flag))
+		if (test_flag(PI_FLAG_RESETING,&obs->flag))
 			break;
 	
 		if (test_flag(BIT_MASK(DIR_OPPISTE),&flag)) {
@@ -821,6 +821,9 @@ static int plugin_proci_pi_handle_request(struct plugin_proci *p, int pi, bool e
 	mutex_lock(&obs->access_mutex);
 
 	flag = get_pi_flag(pi, enable, pl_flag);
+
+	dev_dbg(dev, "Pi handle request %ld enable %d\n",flag, enable);
+	
 	//save register
 	if (enable) {
 		rcfg = cfg->reg_cfg[pi];
@@ -849,8 +852,8 @@ static int plugin_proci_pi_handle_request(struct plugin_proci *p, int pi, bool e
 		}
 	}
 
-	dev_info2(dev, "pi handle request result %d\n",
-		ret);
+	dev_info2(dev, "pi handle request enable %d result %d\n",
+		enable, ret);
 
 	mutex_unlock(&obs->access_mutex);
 	return ret;
@@ -999,13 +1002,8 @@ static long plugin_proci_pi_post_process_messages(struct plugin_proci *p, unsign
 	if (test_flag(PI_FLAG_RESETING,&obs->flag))
 		return interval;
 
-	dev_dbg2(dev, "mxt pi pl_flag=0x%lx flag=0x%lx\n",
+	dev_dbg(dev, "mxt pi pl_flag=0x%lx flag=0x%lx\n",
 		 pl_flag, obs->flag);
-
-	if (test_flag(PI_FLAG_RESET,&obs->flag)) {
-		if (test_and_clear_flag(PI_FLAG_MASK_FUNC,&obs->flag))
-			dev_info2(dev, "mxt pi func found reset pl_flag=0x%lx flag=0x%lx\n",	 pl_flag, obs->flag);
-	}
 
 	//Glove/Stylus/Binding/Option Function renew
 	for (i = 0; i < ARRAY_SIZE(dpr); i++) {
@@ -1064,45 +1062,25 @@ static struct reg_config mxt_option_cfg[] = {
 
 static struct reg_config mxt_glove_cfg[] = {
 
+	{.reg = MXT_GEN_COMMANDPROCESSOR_T6,0,
+		.offset = 2,.buf = {1}, .len = 1, .mask = 0x0, .flag = BIT_MASK(OP_CLR), .tag = 0, .sleep = 0},
+
 	{.reg = MXT_PROCI_GLOVEDETECTION_T78,0,
-		.offset = 0,.buf = {0x1}, .len = 1, .mask = 0x1, .flag = BIT_MASK(OP_SET), .tag = 0, .sleep = 0},
+		.offset = 0,.buf = {0x1}, .len = 1, .mask = 0x1, .flag = BIT_MASK(P_COMMON), .tag = 0, .sleep = 0},
 
-	//dummy
-	{MXT_SPT_USERDATA_T38,0,
-		0,.buf = {0},0,0x1,BIT_MASK(P_COMMON)},
-	{MXT_SPT_USERDATA_T38,0,
-		0,.buf = {0},0,0x1,BIT_MASK(P_COMMON)},
+	{.reg = MXT_PROCG_NOISESUPPRESSION_T72,0,
+		.offset = 13,.buf = {20}, .len = 1, .mask = 0x0, .flag = BIT_MASK(P_COMMON), .tag = 0, .sleep = 50},
 
-	{MXT_TOUCH_MULTITOUCHSCREEN_T100,0,
-		9,.buf = {16},1,0,BIT_MASK(OP_SET)},
-	{MXT_TOUCH_MULTITOUCHSCREEN_T100,0,
-		13,.buf = {0x40,0x02},2,0,BIT_MASK(OP_SET)},
-	
+	{.reg = MXT_GEN_COMMANDPROCESSOR_T6,0,
+		.offset = 2,.buf = {1}, .len = 1, .mask = 0x0, .flag = BIT_MASK(OP_SET), .tag = 0, .sleep = 0},
+
 	{MXT_SPT_USERDATA_T38,0,
 		0,.buf = {0},0,0x1,BIT_MASK(P_COMMON)},
 	{MXT_SPT_USERDATA_T38,0,
 		0,.buf = {0},0,0x1,BIT_MASK(P_COMMON)},
 	{MXT_SPT_USERDATA_T38,0,
 		0,.buf = {0},0,0x1,BIT_MASK(P_COMMON)},
-/*
-	{MXT_PROCG_NOISESUPPRESSION_T72,0,
-		13,{0x0A},1,0,BIT_MASK(GL_ENABLE)},
 
-	{MXT_PROCI_AUXTOUCHCONFIG_T104,0,
-		4,{0x08},1,0,BIT_MASK(GL_ENABLE)},
-
-	{MXT_PROCI_AUXTOUCHCONFIG_T104,0,
-		9,{0x08},1,0,BIT_MASK(GL_ENABLE)},
-
-	{MXT_PROCI_RETRANSMISSIONCOMPENSATION_T80,0,
-		0,{0x0D},1,0,BIT_MASK(GL_ENABLE)},
-
-	{MXT_PROCI_RETRANSMISSIONCOMPENSATION_T80,0,
-		3,{0x0D,0x0},2,0,BIT_MASK(GL_ENABLE)},
-		
-	{MXT_PROCI_STYLUS_T47,0,
-		0,{0x0},1,0x1,BIT_MASK(GL_ENABLE)},
-*/
 };
 
 static struct reg_config mxt_stylus_cfg[] = {
@@ -1347,7 +1325,7 @@ int plugin_proci_pi_gesture_store(struct plugin_proci *p, const char *buf, size_
 	char name[MAX_GES_NAME_LEN];
 	unsigned long op;
 	bool check_switch = false;
-	int ret = 0;
+	int ret = -EIO;
 
 	const struct ges_tab_element *elem;
 	struct ges_tab_element element;
