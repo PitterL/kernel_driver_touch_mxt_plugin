@@ -3085,7 +3085,9 @@ static int mxt_set_smartscan_sync_cfg(struct mxt_data *data, u8 sleep)
 
 static int mxt_set_t7_power_cfg(struct mxt_data *data, u8 sleep)
 {
+#if defined(CONFIG_MXT_PLUGIN_SUPPORT)
 	struct mxt_platform_data *pdata = data->pdata;
+#endif
 	struct device *dev = &data->client->dev;
 	int error;
 	struct t7_config *new_config;
