@@ -35,29 +35,49 @@
 #define AC_FLAG_RESUME					P_FLAG_EV_RESUME
 
 #define AC_FLAG_OLD_STATE_VERY_NOISE			(1<<8)
+#define AC_FLAG_EXT_EVENT_HANDLED			(1<<9)
 
 #define AC_FLAG_STABLE					(1<<16)
 #define AC_FLAG_NOISE					(1<<17)
 #define AC_FLAG_VERY_NOISE				(1<<18)
 #define AC_FLAG_STATE_CHANGE			(1<<19)
 
+#define AC_FLAG_EVENT_SHIFT			(20)
+#define AC_FLAG_EVENT_AC_REMOVED		(1<<20)
+#define AC_FLAG_EVENT_AC_DETECTED		(1<<21)
+
 #define AC_FLAG_FUNC_SHIFT			(24)
 #define AC_FLAG_FUNC_VERY_NOISE_EXIT_RECAL		(1<<24)
+#define AC_FLAG_FUNC_EXTERN_FUNCTION			(1<<25)
 
 #define AC_FLAG_MASK_LOW			P_FLAG_EV_DONE_MASK
 #define AC_FLAG_MASK_NORMAL			(0x0ff00)
-#define AC_OLD_STATE_MASK			(0x00f00)
-#define AC_STATE_MASK				(0xf0000)
+#define AC_STATE_MASK				(0x00f0000)
+#define AC_EXT_EVENT_MASK			(0x0f00000)
 #define AC_FLAG_MASK_FUNC			(0xf000000)
 #define AC_FLAG_MASK				(-1)
 
 struct ac_observer{
 	unsigned long flag;
 	unsigned long touch_id_list;
+	unsigned long ticks_last_vnoise;
+};
+
+/* T72 */
+struct t72_config {
+	u8 vnoilownlthr;
+	u8 rsv;
+	u8 vnoicnt;
+}__packed;
+
+enum{
+	INTERVAL_VNOISE_EXIT_RECAL = 0,
+	NUM_AC_INTERVAL,
 };
 
 struct ac_config{
-	unsigned long rsv;
+	struct t72_config t72;
+	unsigned long interval[NUM_AC_INTERVAL];
 };
 
 static void plugin_ac_hook_t6(struct plugin_ac *p, u8 status)
@@ -145,13 +165,16 @@ static void plugin_ac_reset_slots_hook(struct plugin_ac *p)
 	memset(&obs->touch_id_list, 0, sizeof(*obs) - offsetof(struct ac_observer,touch_id_list));  //clear data after touch_id_list
 }
 
-static int mxt_proc_noise_msg(struct plugin_ac *p,unsigned long pl_flag)
+static long mxt_proc_noise_msg(struct plugin_ac *p,unsigned long pl_flag)
 {
 	const struct mxt_config *dcfg = p->dcfg;
 	struct device *dev = dcfg->dev;
 	struct ac_observer *obs = p->obs;
+	struct ac_config *cfg = p->cfg;
+	long interval = MAX_SCHEDULE_TIMEOUT;	
+	unsigned long ticks = jiffies;
+
 	int handled = 1;
-	int cal = 0;
 
 	dev_dbg(dev, "mxt ac at mxt_proc_noise_msg flag 0x%lx pl_flag 0x%lx\n",obs->flag,pl_flag);
 	
@@ -159,18 +182,19 @@ static int mxt_proc_noise_msg(struct plugin_ac *p,unsigned long pl_flag)
 	if (test_flag(AC_FLAG_VERY_NOISE,&obs->flag)) {
 		dev_dbg(dev, "mxt ac enter very noise state\n");
 		set_flag(AC_FLAG_OLD_STATE_VERY_NOISE, &obs->flag);
+		obs->ticks_last_vnoise = jiffies;
 	//noise / stable
 	}else {
-		dev_dbg(dev, "mxt ac enter %s state\n", test_flag(AC_FLAG_NOISE,&obs->flag) ? "noise" : "stable");
-		
-		if (test_flag(AC_FLAG_FUNC_VERY_NOISE_EXIT_RECAL, &obs->flag)) {	//function enable
-			if (!obs->touch_id_list) {
-				if (test_and_clear_flag(AC_FLAG_OLD_STATE_VERY_NOISE,&obs->flag)) {
-					dev_info(dev, "mxt old very noise to stable set cal\n");
-					cal = 1;
-				}
-			}else
-				handled = 0;
+		dev_dbg(dev, "mxt ac enter %s state\n", test_flag(AC_FLAG_NOISE,&obs->flag) ? "noise" : "stable");	
+		if (!obs->touch_id_list || 
+			time_after_eq(ticks, obs->ticks_last_vnoise + cfg->interval[INTERVAL_VNOISE_EXIT_RECAL])) {
+			if (test_and_clear_flag(AC_FLAG_OLD_STATE_VERY_NOISE,&obs->flag)) {
+				dev_info(dev, "mxt old very noise to stable set cal\n");
+				p->set_t6_cal(p->dev);
+			}
+		}else {
+			interval = obs->ticks_last_vnoise + cfg->interval[INTERVAL_VNOISE_EXIT_RECAL] - ticks;
+			handled = 0;
 		}
 	}
 
@@ -179,7 +203,41 @@ static int mxt_proc_noise_msg(struct plugin_ac *p,unsigned long pl_flag)
 
 	p->set_and_clr_flag(p->dev, PL_STATUS_FLAG_NOISE_CHANGE, 0);
 
-	return cal;
+	return (long)interval;
+}
+
+static int mxt_proc_ext_event_msg(struct plugin_ac *p, unsigned long flag)
+{
+	const struct mxt_config *dcfg = p->dcfg;
+	struct device *dev = dcfg->dev;
+	struct ac_config *cfg = p->cfg;
+	struct ac_observer *obs = p->obs;
+	int set = 1;
+
+	struct reg_config t72_reg =
+		{.reg = MXT_PROCG_NOISESUPPRESSION_T72, .instance = 0,
+			.offset = 77,.buf = {3, 0, 0xff}, .len = 3, .mask = 0, .flag = 0, .sleep = 0};
+
+	if (test_flag(AC_FLAG_EVENT_AC_DETECTED, &flag)) {
+		dev_info(dev, "[mxt] ext event ac set t72 %d %x\n", t72_reg.buf[0],  t72_reg.buf[2]);
+
+		t72_reg.buf[0] = 3;
+		t72_reg.buf[1] = 0;
+		t72_reg.buf[2] = 0xff;
+		set = 1;
+	} else {
+		if (!test_flag(AC_FLAG_RESET, &obs->flag)) {
+			dev_info(dev, "[mxt] ext event clr t72 %d %x\n", t72_reg.buf[0], t72_reg.buf[2]);
+			memcpy(t72_reg.buf, &cfg->t72, sizeof(cfg->t72));
+
+			set = 0;
+		}
+	}
+
+	if (set)
+		return p->set_obj_cfg(p->dev, &t72_reg, NULL, 0);
+
+	return 0;
 }
 
 static void plugin_ac_start(struct plugin_ac *p, bool resume)
@@ -199,27 +257,57 @@ static void plugin_ac_stop(struct plugin_ac *p)
 	set_and_clr_flag(AC_FLAG_WORKAROUND_HALT,AC_FLAG_RESUME, &obs->flag);
 }
 
-static long plugin_ac_post_process_messages(struct plugin_ac *p, unsigned long pl_flag)
+static int get_extern_ac_status(void)
+{
+	return -EIO;
+}
+
+static void plugin_ac_pre_process_messages(struct plugin_ac *p, unsigned long pl_flag)
 {
 	struct ac_observer *obs = p->obs;
+	int det = get_extern_ac_status();
+
+	if (det == 1) {
+		if (!test_flag(AC_FLAG_EVENT_AC_DETECTED, &obs->flag))
+			set_and_clr_flag(AC_FLAG_EVENT_AC_DETECTED , AC_FLAG_EXT_EVENT_HANDLED | AC_EXT_EVENT_MASK, &obs->flag);
+	}else if (det == 0) {
+		if (!test_flag(AC_FLAG_EVENT_AC_REMOVED, &obs->flag))
+			set_and_clr_flag(AC_FLAG_EVENT_AC_REMOVED , AC_FLAG_EXT_EVENT_HANDLED | AC_EXT_EVENT_MASK, &obs->flag);
+	}else {
+		// unused
+	}
+}
+
+static long plugin_ac_post_process_messages(struct plugin_ac *p, unsigned long pl_flag)
+{
+	const struct mxt_config *dcfg = p->dcfg;
+	struct ac_observer *obs = p->obs;	
+	struct device *dev = dcfg->dev;
 	long interval = MAX_SCHEDULE_TIMEOUT;
-	int cal = 0;
 
-	if (test_flag(AC_FLAG_WORKAROUND_HALT,&obs->flag))
+	dev_info(dev, "[mxt]status: Flag=0x%08lx\n",
+		obs->flag);
+
+	if (test_flag(AC_FLAG_WORKAROUND_HALT, &obs->flag))
 		return interval;
 
-	if (test_flag(AC_FLAG_RESETING|AC_FLAG_CALING,&obs->flag))
+	if (test_flag(AC_FLAG_RESETING|AC_FLAG_CALING, &obs->flag))
 		return interval;
 
-	if (test_flag(AC_FLAG_STATE_CHANGE, &obs->flag)) {
-		cal = mxt_proc_noise_msg(p, pl_flag);
+	if (test_flag(AC_FLAG_FUNC_EXTERN_FUNCTION, &obs->flag)) {
+		if (test_flag(AC_EXT_EVENT_MASK, &obs->flag)) {
+			if (!test_and_set_flag(AC_FLAG_EXT_EVENT_HANDLED, &obs->flag)) {
+				mxt_proc_ext_event_msg(p, obs->flag);
+			}
+		}
 	}
 
-	if (cal) {
-		if(!test_flag(AC_FLAG_CAL,&obs->flag))
-			p->set_t6_cal(p->dev);
+	if (test_flag(AC_FLAG_FUNC_VERY_NOISE_EXIT_RECAL, &obs->flag)) {
+		if (test_flag(AC_FLAG_STATE_CHANGE, &obs->flag)) {
+			interval = mxt_proc_noise_msg(p, pl_flag);
+		}
 	}
-
+	
 	clear_flag(AC_FLAG_MASK_LOW,&obs->flag);
 
 	return interval;
@@ -229,7 +317,9 @@ static int plugin_ac_show(struct plugin_ac *p)
 {
 	const struct mxt_config *dcfg = p->dcfg;
 	struct device *dev = dcfg->dev;
+	struct ac_config *cfg = p->cfg;
 	struct ac_observer * obs = p->obs;
+	int i;
 
 	dev_info(dev, "[mxt]PLUG_AC_VERSION: 0x%x\n",PLUG_AC_VERSION);
 	
@@ -242,6 +332,9 @@ static int plugin_ac_show(struct plugin_ac *p)
 	dev_info(dev, "[mxt]AC obs :\n");
 	dev_info(dev, "[mxt]status: Flag=0x%08lx\n",
 		obs->flag);
+
+	for (i = 0; i < NUM_AC_INTERVAL; i++)
+		dev_info(dev, "ac interval[%d] = %ld\n", i, cfg->interval[i]);
 	dev_info(dev, "[mxt]\n");
 
 	return 0;
@@ -251,8 +344,10 @@ static int plugin_ac_store(struct plugin_ac *p, const char *buf, size_t count)
 {
 	const struct mxt_config *dcfg = p->dcfg;
 	struct device *dev = dcfg->dev;	
+	struct ac_config *cfg = p->cfg;
 	struct ac_observer * obs = p->obs;
-	int config[10];
+	int config[2];
+	char name[255];
 
 	dev_info(dev, "[mxt]ac store:%s\n",buf);
 
@@ -268,16 +363,65 @@ static int plugin_ac_store(struct plugin_ac *p, const char *buf, size_t count)
 		config[0] &= AC_FLAG_MASK_FUNC;
 		set_and_clr_flag(config[0], AC_FLAG_MASK_FUNC, &obs->flag);
 		dev_info(dev, "[mxt] set func %x\n", config[0]);
-	}else{
-		dev_info(dev, "[mxt] BAD\n");
+	}else {
+		if (count > 4 && count < sizeof(name)) {
+			if (sscanf(buf, "interval[%d]: %d", &config[0],&config[1]) == 2) {
+				if (config[0] < NUM_AC_INTERVAL)
+					cfg->interval[config[0]] = config[1];
+			}else {
+				dev_err(dev, "Unknow ac command: %s\n",buf);
+			}
+		}
 	}
 	
 	return 0;
 }
 
+ssize_t plugin_ac_extern_event_show(struct plugin_ac *p, char *buf, size_t count)
+{
+	struct ac_observer *obs = p->obs;
+	ssize_t offset = 0;
+
+	if (!p->init)
+		return 0;
+
+	offset += scnprintf(buf + offset, count - offset, "%ld %s\n",
+		(obs->flag & AC_EXT_EVENT_MASK) >> AC_FLAG_EVENT_SHIFT,
+		(obs->flag & AC_FLAG_EXT_EVENT_HANDLED) ? "done" : "");
+
+	return offset;
+}
+
+int plugin_ac_extern_event_store(struct plugin_ac *p, const char *buf, size_t count)
+{
+	struct ac_observer *obs = p->obs;
+	int config;
+
+	if (!p->init)
+		return -EIO;
+
+	if (count) {
+		config = buf[0];
+		config <<= AC_FLAG_EVENT_SHIFT;
+		config &= AC_EXT_EVENT_MASK;
+
+		set_and_clr_flag(config, AC_EXT_EVENT_MASK | AC_FLAG_EXT_EVENT_HANDLED, &obs->flag);
+	}
+	
+	return count;
+}
+
 static int init_ac_object(struct plugin_ac *p)
 { 
-	return 0;
+	struct ac_config *cfg = p->cfg;
+
+	struct reg_config t72_reg =
+		{.reg = MXT_PROCG_NOISESUPPRESSION_T72, .instance = 0,
+			.offset = 77,.buf = {0}, .len = 3, .mask = 0, .flag = 0, .sleep = 0, .ext_buf = (u8 *)&cfg->t72};
+
+	cfg->interval[INTERVAL_VNOISE_EXIT_RECAL] = 3 * HZ;
+
+	return p->get_obj_cfg(p->dev, &t72_reg, FLAG_REG_DATA_IN_EXT_BUF);
 }
 
 static int deinit_ac_object(struct plugin_ac *p)
@@ -337,6 +481,7 @@ static struct plugin_ac mxt_plugin_ac_if =
 	.hook_t6 = plugin_ac_hook_t6,
 	.hook_t100 = plugin_ac_hook_t9_t100,
 	.hook_t72 = plugin_ac_hook_t72,
+	.pre_process = plugin_ac_pre_process_messages,
 	.post_process = plugin_ac_post_process_messages,
 	.hook_reset_slots = plugin_ac_reset_slots_hook,
 	.show = plugin_ac_show,

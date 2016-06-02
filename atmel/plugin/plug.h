@@ -520,7 +520,7 @@ struct t96_config {
 #define MXT_T100_TCHHYST	31
 #define MXT_T100_INTTHR		32
 #define MXT_T100_MRGTHR		35
-#define MXT_T100_DXTHRSF	38
+#define MXT_T100_DXTHRSF		38
 #define MXT_T100_MRGHYST	37
 #define MXT_T100_INTTHRHYST	53
 
@@ -767,7 +767,7 @@ struct plugin_ac{
 	void (*hook_t6)(struct plugin_ac *p, u8 status);
 	int (*hook_t100)(struct plugin_ac *p, int id, int x, int y, struct ext_info *in);
 	void (*hook_t72)(struct plugin_ac *p, u8* msg);
-	void (*pre_process)(struct plugin_ac *p, int pl_flag);
+	void (*pre_process)(struct plugin_ac *p, unsigned long pl_flag);
 	long (*post_process)(struct plugin_ac *p, unsigned long pl_flag);
 	void (*hook_reset_slots)(struct plugin_ac *p);
 	int (*show)(struct plugin_ac *p);
@@ -777,6 +777,8 @@ struct plugin_ac{
 	void *dev;	//host dev, point to plug device
 	const struct mxt_config *dcfg;
 	void (*set_and_clr_flag)(void * pl_dev, int mask_s, int mask_c);
+	int (*set_obj_cfg)(void *pl_dev, struct reg_config *config, u8 *stack_buf, unsigned long flag);
+	int (*get_obj_cfg)(void *pl_dev, struct reg_config *config, unsigned long flag);
 	int (*set_t6_cal)(void* pl_dev);
 };
 

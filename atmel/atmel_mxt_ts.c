@@ -215,11 +215,16 @@
 #define MXT_T72_NOISE_SUPPRESSION_NOISELVCHG	(1 << 4)
 
 /* T100 Multiple Touch Touchscreen */
+
 //#define MXT_T100_CTRL		0
 #define MXT_T100_CFG1		1
 #define MXT_T100_SCRAUX		2
 #define MXT_T100_TCHAUX		3
+#define MXT_T100_XSIZE		9
+#define MXT_T100_XPITCH		10
 #define MXT_T100_XRANGE		13
+#define MXT_T100_YSIZE		20
+#define MXT_T100_YPITCH		21
 #define MXT_T100_YRANGE		24
 
 #define MXT_T100_CFG_SWITCHXY	(1 << 5)
@@ -306,6 +311,7 @@ struct mxt_data {
 	void *raw_info_block;
 	unsigned int max_x;
 	unsigned int max_y;
+
 #if defined(CONFIG_MXT_REPORT_VIRTUAL_KEY_SLOT_NUM)
 	unsigned int max_y_t;	//touch max y
 #endif
@@ -541,6 +547,14 @@ static ssize_t mxt_plugin_clip_store(struct device *dev,
 static ssize_t mxt_plugin_clip_tag_show(struct device *dev,
 	struct device_attribute *attr, char *buf);
 #	endif
+
+#	if defined(CONFIG_MXT_PLIGIN_AC)
+static ssize_t mxt_plugin_ac_extern_event_show(struct device *dev,
+	struct device_attribute *attr, char *buf);
+static ssize_t mxt_plugin_ac_extern_event_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count);
+#	endif
+
 #endif
 
 static bool keylist_empty(struct mxt_platform_data *pdata, u8 type)
@@ -1610,6 +1624,8 @@ static void mxt_proc_t100_message(struct mxt_data *data, u8 *message)
 	int x;
 	int y;
 	int tool;
+//	s8 comp[2];
+//	int tan;
 	struct ext_info info;
 
 	/* do not report events if input device not yet registered */
@@ -3547,7 +3563,7 @@ err_free_mem:
 	return error;
 }
 
-static int mxt_read_t100_config(struct mxt_data *data, u16 *rx, u16 *ry)
+static int mxt_read_t100_config(struct mxt_data *data, u16 *rx, u16 *ry, u8 *cfg)
 {
 	struct i2c_client *client = data->client;
 	int error;
@@ -3576,7 +3592,7 @@ static int mxt_read_t100_config(struct mxt_data *data, u16 *rx, u16 *ry)
 
 	error = __mxt_read_reg(client,
 				object->start_address,
-				sizeof(data->tchcfg), &data->tchcfg);
+				sizeof(cfg), cfg);
 	if (error)
 		return error;
 
@@ -3591,7 +3607,7 @@ static int mxt_read_t100_config(struct mxt_data *data, u16 *rx, u16 *ry)
 	if (range_y == 0)
 		range_y = 1023;
 
-	if (test_flag_8bit(MXT_T100_CFG_SWITCHXY, &data->tchcfg[MXT_T100_CFG1]))
+	if (test_flag_8bit(MXT_T100_CFG_SWITCHXY, &cfg[MXT_T100_CFG1]))
 		swap(range_x, range_y);
 
 	*rx = range_x;
@@ -3614,12 +3630,14 @@ static int mxt_initialize_t100_input_device(struct mxt_data *data)
 	struct obj_link *ln;
 	struct obj_container *con;
 	u16 range_x, range_y;
+	u8 cfg[4];
 	int error;
 
-	error = mxt_read_t100_config(data, &range_x, &range_y);
+	error = mxt_read_t100_config(data, &range_x, &range_y, cfg);
 	if (error == 0) {
 		if (data->max_x != range_x || 
-			data->max_y != range_y) {	//release input device if resolution not match
+			data->max_y != range_y ||
+			memcmp(data->tchcfg, cfg, sizeof(data->tchcfg))) {	//release input device if resolution not match
 
 			mxt_free_input_device(data);
 		}
@@ -3631,6 +3649,7 @@ static int mxt_initialize_t100_input_device(struct mxt_data *data)
 		if (data->max_y_t > range_y)
 			data->max_y_t = range_y;
 #endif
+		memcpy(data->tchcfg, cfg, sizeof(data->tchcfg));
 	}
 
 	if (data->input_dev) {
@@ -4840,6 +4859,11 @@ static DEVICE_ATTR(gesture_trace, S_IRUSR, mxt_plugin_gesture_trace_show,
 				mxt_plugin_clip_store);
 	static DEVICE_ATTR(clip_tag, S_IRUSR, mxt_plugin_clip_tag_show, NULL);
 #	endif
+
+#	if defined(CONFIG_MXT_PLIGIN_AC)
+static DEVICE_ATTR(ac, S_IWUSR | S_IRUSR, mxt_plugin_ac_extern_event_show,
+			mxt_plugin_ac_extern_event_store);
+#	endif
 #endif
 
 static struct attribute *mxt_attrs[] = {
@@ -4876,6 +4900,9 @@ static struct attribute *mxt_attrs[] = {
 	&dev_attr_clip.attr,
 	&dev_attr_clip_tag.attr,
 #     endif
+#	if defined(CONFIG_MXT_PLIGIN_AC)
+	&dev_attr_ac.attr,
+#	endif
 #endif
 	NULL
 };
@@ -4946,7 +4973,8 @@ static void mxt_start(struct mxt_data *data, bool resume)
 #endif
 		mxt_process_messages_until_invalid(data);
 
-		mxt_set_reset(data, 0);
+		//mxt_set_reset(data, 0);
+		mxt_soft_reset(data);
 	}
 
 #if defined(CONFIG_MXT_PLUGIN_SUPPORT)
